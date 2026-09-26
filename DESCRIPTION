@@ -1,0 +1,21 @@
+Package: EconR
+Type: Package
+Title: Consistent Econometric Models with Model-Specific Missing-Data Handling
+Version: 0.1.2
+Authors@R: person('David', 'Bustamante', role = c('aut','cre'), email = 'david@example.com')
+Description: A consistent interface for econometric estimation. The first release implements ordinary and weighted least squares with formula-aware missing-data handling, heteroskedasticity-consistent and clustered covariance estimation, prediction, residuals, fitted values, and standard model methods.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Imports:
+    sandwich (>= 3.0-0),
+    clubSandwich,
+    generics
+Suggests:
+    testthat (>= 3.0.0),
+    estimatr,
+    broom,
+    modelsummary,
+    dplyr,
+    tibble
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.0

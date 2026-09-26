@@ -1,0 +1,6 @@
+^\.git$
+^\.github$
+^\.vscode$
+^moretests\.r$
+^testing\.r$
+^wage1\.csv$
