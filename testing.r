@@ -5,8 +5,6 @@
 rm(list = ls())
 gc()
 
-setwd("G:/My Drive/5. CURSOS ONLINE/R Practice FULL/Econ Own Package")
-
 # English Format and Avoiding scientific notation
 Sys.setlocale("LC_TIME", "English")
 options(scipen = 999)
