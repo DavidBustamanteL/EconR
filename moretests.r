@@ -16,6 +16,7 @@ library(tidyverse)
 library(magrittr)
 library(broom)
 library(estimatr)
+library(WeightIt)
 library(sandwich)
 library(clubSandwich)
 library(modelsummary)
@@ -26,18 +27,25 @@ library(EconR)
 wages = read.csv("wage1.csv", header = TRUE, sep = ",")
 
 
-#### 1. ####
+#### 1. Standard OLS ####
 
 # estimatr
 model = lm_robust(wage ~ educ + exper + nonwhite + female + married, data = wages, se_type = "HC1")
 summary(model)
 tidy(model)
-modelsummary(model)
 
+# EconR
 model_econr = econ_lm(wage ~ educ + exper + nonwhite + female + married, data = wages, vcov = "HC1")
 summary(model_econr)
 tidy(model_econr)
-modelsummary(model_econr, stars = T, output = "latex")
+
+# WeightIt -> HC0 in WeightIT is HC1 in all other packages
+model_wei = lm_weightit(wage ~ educ + exper + nonwhite + female + married, data = wages, vcov = "HC0")
+summary(model_wei)
+tidy(model_wei)
+
+
+
 
 
 # Interactions
