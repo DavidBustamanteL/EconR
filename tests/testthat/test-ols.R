@@ -4466,3 +4466,311 @@ test_that("multiple-model ANOVA supports scale and test arguments", {
         )
     )
 })
+
+
+#### 28. Summary Statistics ####
+
+test_that("summary model-fit statistics match lm for OLS", {
+
+    econ = econ_lm(
+        mpg ~ wt + hp,
+        data = mtcars
+    )
+
+    base = lm(
+        mpg ~ wt + hp,
+        data = mtcars
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$sigma,
+        base_summary$sigma
+    )
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+
+    expect_equal(
+        as.numeric(econ_summary$f.df1),
+        as.numeric(base_summary$fstatistic[2])
+    )
+
+    expect_equal(
+        as.numeric(econ_summary$f.df2),
+        as.numeric(base_summary$fstatistic[3])
+    )
+})
+
+
+test_that("summary model-fit statistics match lm for WLS", {
+
+    econ = econ_lm(
+        mpg ~ wt + hp,
+        data = mtcars,
+        weights = qsec
+    )
+
+    base = lm(
+        mpg ~ wt + hp,
+        data = mtcars,
+        weights = qsec
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$sigma,
+        base_summary$sigma
+    )
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+})
+
+
+test_that("summary model-fit statistics match lm under rank deficiency", {
+
+    d = mtcars %>%
+        mutate(
+            wt_copy = wt
+        )
+
+    econ = econ_lm(
+        mpg ~ wt + wt_copy + hp,
+        data = d
+    )
+
+    base = lm(
+        mpg ~ wt + wt_copy + hp,
+        data = d
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$sigma,
+        base_summary$sigma
+    )
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+
+    expect_equal(
+        econ_summary$f.df1,
+        2L
+    )
+})
+
+
+test_that("summary model-fit statistics match lm without intercept", {
+
+    econ = econ_lm(
+        mpg ~ 0 + wt + hp,
+        data = mtcars
+    )
+
+    base = lm(
+        mpg ~ 0 + wt + hp,
+        data = mtcars
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+})
+
+
+test_that("summary model-fit statistics match lm with offsets", {
+
+    econ = econ_lm(
+        mpg ~ wt + offset(hp / 10),
+        data = mtcars
+    )
+
+    base = lm(
+        mpg ~ wt + offset(hp / 10),
+        data = mtcars
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$sigma,
+        base_summary$sigma
+    )
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+})
+
+
+test_that("summary model-fit statistics match lm with zero weights", {
+
+    d = mtcars %>%
+        mutate(
+            w = replace(
+                rep(1, n()),
+                1:3,
+                0
+            )
+        )
+
+    econ = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = w
+    )
+
+    base = lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = w
+    )
+
+    econ_summary = summary(econ)
+    base_summary = summary(base)
+
+    expect_equal(
+        econ_summary$sigma,
+        base_summary$sigma
+    )
+
+    expect_equal(
+        econ_summary$r.squared,
+        base_summary$r.squared
+    )
+
+    expect_equal(
+        econ_summary$adj.r.squared,
+        base_summary$adj.r.squared
+    )
+
+    expect_equal(
+        unname(econ_summary$fstatistic),
+        unname(base_summary$fstatistic[1])
+    )
+})
+
+
+test_that("HC1 summary joint test matches estimatr", {
+
+    skip_if_not_installed(
+        "estimatr"
+    )
+
+    econ = econ_lm(
+        mpg ~ wt + hp,
+        data = mtcars,
+        vcov = "HC1"
+    )
+
+    reference = estimatr::lm_robust(
+        mpg ~ wt + hp,
+        data = mtcars,
+        se_type = "HC1"
+    )
+
+    econ_summary = summary(
+        econ
+    )
+
+    reference_summary = summary(
+        reference
+    )
+
+    expect_equal(
+        unname(
+            econ_summary$fstatistic
+        ),
+        unname(
+            reference_summary$fstatistic[1]
+        ),
+        tolerance = 1e-10
+    )
+
+    expect_equal(
+        as.numeric(
+            econ_summary$f.df1
+        ),
+        as.numeric(
+            reference_summary$fstatistic[2]
+        )
+    )
+
+    expect_equal(
+        as.numeric(
+            econ_summary$f.df2
+        ),
+        as.numeric(
+            reference_summary$fstatistic[3]
+        )
+    )
+})

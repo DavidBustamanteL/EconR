@@ -1569,14 +1569,164 @@ summary.econ_lm <- function(
     )
 
 
-    ###### 4. Construct summary object ####
+    ###### 4. Compute model-fit statistics ####
+
+    w <- stats::weights(
+        object
+    )
+
+    if (is.null(w)) {
+        w <- rep.int(
+            1,
+            length(object$residuals)
+        )
+    }
+
+    rss <- sum(
+        w * object$residuals^2
+    )
+
+    residual_se <- if (object$df.residual > 0) {
+
+        sqrt(
+            rss / object$df.residual
+        )
+
+    } else {
+
+        NaN
+    }
+
+    y_adjusted <- object$y -
+        object$offset
+
+    n <- stats::nobs(
+        object
+    )
+
+    if (attr(object$terms, "intercept") == 1L) {
+
+        y_mean <- stats::weighted.mean(
+            y_adjusted,
+            w
+        )
+
+        tss <- sum(
+            w *
+                (y_adjusted - y_mean)^2
+        )
+
+    } else {
+
+        tss <- sum(
+            w *
+                y_adjusted^2
+        )
+    }
+
+    r_squared <- 1 -
+        rss / tss
+
+    if (object$df.residual > 0) {
+
+        if (attr(object$terms, "intercept") == 1L) {
+
+            adj_r_squared <- 1 -
+                (1 - r_squared) *
+                (
+                    (n - 1) /
+                        object$df.residual
+                )
+
+        } else {
+
+            adj_r_squared <- 1 -
+                (1 - r_squared) *
+                (
+                    n /
+                        object$df.residual
+                )
+        }
+
+    } else {
+
+        adj_r_squared <- NaN
+    }
+
+    ###### 5. Compute joint model test ####
+
+    coef_names <- names(
+        est
+    )
+
+    test_terms <- which(
+        coef_names != "(Intercept)" &
+            !is.na(est)
+    )
+
+    if (
+        length(test_terms) > 0L &&
+        object$df.residual > 0
+    ) {
+
+        beta_test <- est[
+            test_terms
+        ]
+
+        V_test <- object$vcov[
+            test_terms,
+            test_terms,
+            drop = FALSE
+        ]
+
+        q <- length(
+            beta_test
+        )
+
+        wald <- as.numeric(
+            t(beta_test) %*%
+                solve(
+                    V_test,
+                    beta_test
+                )
+        )
+
+        f_statistic <- wald / q
+
+        f_df1 <- q
+        f_df2 <- object$df.residual
+
+        f_p_value <- stats::pf(
+            f_statistic,
+            df1 = f_df1,
+            df2 = f_df2,
+            lower.tail = FALSE
+        )
+
+    } else {
+
+        f_statistic <- NaN
+        f_df1 <- 0L
+        f_df2 <- object$df.residual
+        f_p_value <- NaN
+    }
+
+
+    ###### 6. Construct summary object ####
 
     ans <- list(
         call = object$call,
         coefficients = z,
         df.residual = object$df.residual,
         nobs = object$nobs,
-        vcov_type = object$vcov_type
+        vcov_type = object$vcov_type,
+        sigma = residual_se,
+        r.squared = r_squared,
+        adj.r.squared = adj_r_squared,
+        fstatistic = f_statistic,
+        f.df1 = f_df1,
+        f.df2 = f_df2,
+        f.p.value = f_p_value
     )
 
     class(ans) <- "summary.econ_lm"
@@ -1593,6 +1743,8 @@ print.summary.econ_lm <- function(
     ...
 ) {
 
+    ###### 1. Print call ####
+
     cat(
         "\nCall:\n"
     )
@@ -1601,26 +1753,128 @@ print.summary.econ_lm <- function(
         x$call
     )
 
-    cat(
-        "\nCoefficients:\n"
-    )
 
-    printCoefmat(
-        x$coefficients,
-        P.values = TRUE,
-        has.Pvalue = TRUE
-    )
+    ###### 2. Print covariance type ####
 
     cat(
-        "\n",
-        x$nobs,
-        " observations; ",
-        x$df.residual,
-        " residual df; vcov: ",
+        "\nCovariance type: ",
         x$vcov_type,
         "\n",
         sep = ""
     )
+
+
+    ###### 3. Print coefficients ####
+
+    cat(
+        "\nCoefficients:\n"
+    )
+
+    coef_table <- x$coefficients
+
+    formatted <- matrix(
+        "",
+        nrow = nrow(coef_table),
+        ncol = ncol(coef_table),
+        dimnames = dimnames(coef_table)
+    )
+
+    formatted[, "Estimate"] <- sprintf(
+        "%.5f",
+        coef_table[, "Estimate"]
+    )
+
+    formatted[, "Std. Error"] <- sprintf(
+        "%.5f",
+        coef_table[, "Std. Error"]
+    )
+
+    formatted[, "t value"] <- sprintf(
+        "%.5f",
+        coef_table[, "t value"]
+    )
+
+    formatted[, "Pr(>|t|)"] <- sprintf(
+        "%.5f",
+        coef_table[, "Pr(>|t|)"]
+    )
+
+    print(
+        formatted,
+        quote = FALSE,
+        right = TRUE
+    )
+
+
+    ###### 4. Print model-fit statistics ####
+
+    cat(
+        "\nResidual standard error: ",
+        sprintf(
+            "%.5f",
+            x$sigma
+        ),
+        " on ",
+        x$df.residual,
+        " degrees of freedom",
+        "\n",
+        sep = ""
+    )
+
+    cat(
+        "Multiple R-squared:  ",
+        sprintf(
+            "%.5f",
+            x$r.squared
+        ),
+        "\n",
+        sep = ""
+    )
+
+    cat(
+        "Adjusted R-squared:  ",
+        sprintf(
+            "%.5f",
+            x$adj.r.squared
+        ),
+        "\n",
+        sep = ""
+    )
+
+
+    ###### 5. Print joint model test ####
+
+    cat(
+        "F-statistic: ",
+        sprintf(
+            "%.5f",
+            x$fstatistic
+        ),
+        " on ",
+        x$f.df1,
+        " and ",
+        x$f.df2,
+        " DF, p-value: ",
+        sprintf(
+            "%.5f",
+            x$f.p.value
+        ),
+        "\n",
+        sep = ""
+    )
+
+
+    ###### 6. Print observations ####
+
+    cat(
+        "Observations: ",
+        x$nobs,
+        "\n",
+        sep = ""
+    )
+
+
+    ###### 7. Return ####
 
     invisible(x)
 }

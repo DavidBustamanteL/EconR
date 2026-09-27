@@ -38,11 +38,54 @@ tidy(model)
 model_econr = econ_lm(wage ~ educ + exper + nonwhite + female + married, data = wages, vcov = "HC1")
 summary(model_econr)
 tidy(model_econr)
+modelsummary(
+    model_econr,
+    stars = TRUE,
+    output = "default"
+)
 
 # WeightIt -> HC0 in WeightIT is HC1 in all other packages
 model_wei = lm_weightit(wage ~ educ + exper + nonwhite + female + married, data = wages, vcov = "HC0")
 summary(model_wei)
 tidy(model_wei)
+
+# model summary expanded
+model_1 = econ_lm(
+    wage ~ educ,
+    data = wages,
+    vcov = "HC1"
+)
+
+model_2 = econ_lm(
+    wage ~ educ + exper,
+    data = wages,
+    vcov = "HC1"
+)
+
+model_3 = econ_lm(
+    wage ~ educ + exper + nonwhite + female + married,
+    data = wages,
+    vcov = "HC1"
+)
+
+model_4 = econ_lm(
+    wage ~ educ * female + exper + nonwhite + married,
+    data = wages,
+    vcov = "HC1"
+)
+
+models = list(
+    "Education" = model_1,
+    "Human Capital" = model_2,
+    "Full Model" = model_3,
+    "Interaction" = model_4
+)
+
+modelsummary(
+    models,
+    stars = TRUE,
+    output = "default"
+)
 
 
 
