@@ -1,3 +1,4 @@
+# LM
 export(econ_lm)
 export(econ_vcov)
 
@@ -30,3 +31,9 @@ importFrom(stats,nobs)
 importFrom(stats,anova)
 importFrom(stats,formula)
 importFrom(stats,printCoefmat)
+
+# Binary
+export(econ_binary)
+
+S3method(coef,econ_binary)
+S3method(print,econ_binary)

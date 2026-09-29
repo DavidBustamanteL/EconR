@@ -18,6 +18,7 @@ library(WeightIt)
 library(sandwich)
 library(clubSandwich)
 library(modelsummary)
+library(lmtest)
 
 library(EconR)
 
@@ -86,9 +87,6 @@ modelsummary(
 )
 
 
-
-
-
 # Interactions
 model1 = lm_robust(
     wage ~ educ + exper * female,
@@ -99,3 +97,11 @@ model_econr1 = econ_lm(
     wage ~ educ + exper * female,
     data = wages, vcov = "HC1")
 tidy(model_econr1)
+
+car::linearHypothesis(
+    model_econr1,
+    c("female = 0", "exper:female = 0"),
+    vcov. = vcov(model_econr1)
+)
+lmtest::waldtest(model_econr1, c("female", "exper:female"))
+waldtest(model_econr1, . ~ . - exper - exper:female, test = "F")
