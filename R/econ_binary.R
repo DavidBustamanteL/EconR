@@ -832,6 +832,390 @@ glance.econ_binary <- function(
     )
 }
 
+###### Confidence Intervals ####
+
+#' @export
+confint.econ_binary = function(object, parm, level = 0.95, ...) {
+
+    if (!is.numeric(level) || length(level) != 1L ||
+        is.na(level) || level <= 0 || level >= 1) {
+        stop("'level' must be a single number between 0 and 1.")
+    }
+
+    b = coef(object)
+    se = sqrt(diag(vcov(object, ...)))
+
+    if (missing(parm)) {
+        parm = seq_along(b)
+    }
+
+    if (is.character(parm)) {
+        parm = match(parm, names(b))
+
+        if (anyNA(parm)) {
+            stop("Unknown coefficient name in 'parm'.")
+        }
+    }
+
+    if (anyNA(parm) || any(parm < 1 | parm > length(b))) {
+        stop("Invalid coefficient selection in 'parm'.")
+    }
+
+    z = stats::qnorm((1 + level) / 2)
+
+    ci = cbind(
+        b[parm] - z * se[parm],
+        b[parm] + z * se[parm]
+    )
+
+    colnames(ci) = c(
+        paste0(format(100 * (1 - level) / 2), " %"),
+        paste0(format(100 * (1 + level) / 2), " %")
+    )
+
+    ci
+}
+
+
+###### Fitted Values ####
+
+#' @export
+fitted.econ_binary = function(object, ...) {
+
+    object$fitted.values
+}
+
+
+
+
+###### Residuals ####
+
+#' @export
+residuals.econ_binary = function(
+    object,
+    type = c("deviance", "pearson", "response", "working", "partial"),
+    ...
+) {
+
+    type = match.arg(type)
+
+    y = object$y
+    mu = object$fitted.values
+    w = object$weights
+
+    residuals = switch(
+        type,
+
+        response = y - mu,
+
+        pearson = (y - mu) * sqrt(w) /
+            sqrt(object$family$variance(mu)),
+
+        working = object$residuals,
+
+        deviance = {
+            dev = object$family$dev.resids(y, mu, w)
+            sign(y - mu) * sqrt(pmax(dev, 0))
+        },
+
+        partial = {
+
+            glm_data = object$model
+            glm_data$.econ_prior_weights = object$weights
+
+            glm_ref = stats::glm(
+                formula = object$formula,
+                data = glm_data,
+                weights = .econ_prior_weights,
+                family = object$family
+            )
+
+            stats::residuals(glm_ref, type = "partial")
+        }
+    )
+
+    residuals
+}
+
+
+
+###### Model Weights ####
+
+#' @export
+weights.econ_binary = function(object, type = c("prior", "working"), ...) {
+
+    type = match.arg(type)
+
+    switch(
+        type,
+        prior = object$weights,
+        working = object$working.weights
+    )
+}
+
+
+
+###### Model Formula ####
+
+#' @export
+formula.econ_binary = function(x, ...) {
+
+    x$formula
+}
+
+
+
+###### Analysis of Deviance ####
+
+#' @export
+anova.econ_binary = function(
+    object,
+    ...,
+    test = "Chisq"
+) {
+
+    glm_data = object$model
+    glm_data$.econ_prior_weights = object$weights
+
+    glm_ref = stats::glm(
+        formula = object$formula,
+        data = glm_data,
+        weights = .econ_prior_weights,
+        family = object$family
+    )
+
+    stats::anova(
+        glm_ref,
+        ...,
+        test = test
+    )
+}
+
+
+
+
+###### Analysis of Deviance ####
+
+#' @export
+anova.econ_binary = function(object, ..., test = "Chisq") {
+
+    models = list(object, ...)
+
+    if (!all(vapply(models, inherits, logical(1), "econ_binary"))) {
+        stop("All supplied models must be 'econ_binary' objects.")
+    }
+
+    if (length(models) > 1L) {
+
+        reference = models[[1L]]
+
+        for (i in seq_along(models)[-1L]) {
+
+            current = models[[i]]
+
+            # Check estimation samples
+            if (!identical(reference$used, current$used)) {
+                stop("Models must use identical estimation samples.")
+            }
+
+            # Check observation weights
+            if (!isTRUE(all.equal(
+                unname(reference$weights),
+                unname(current$weights)
+            ))) {
+                stop("Models must use identical observation weights.")
+            }
+
+            # Check dependent variable
+            if (!isTRUE(all.equal(
+                unname(reference$y),
+                unname(current$y)
+            ))) {
+                stop("Models must use identical dependent-variable values.")
+            }
+
+            # Check shared regressors
+            shared = intersect(
+                colnames(reference$x),
+                colnames(current$x)
+            )
+
+            if (length(shared) > 0L) {
+
+                if (!isTRUE(all.equal(
+                    unname(reference$x[, shared, drop = FALSE]),
+                    unname(current$x[, shared, drop = FALSE])
+                ))) {
+                    stop("Models contain different values for shared regressors.")
+                }
+            }
+
+            # Check link function
+            if (!identical(reference$link, current$link)) {
+                stop("Models must use the same link function.")
+            }
+        }
+    }
+
+    # Reconstruct equivalent glm objects
+    glm_models = lapply(models, function(x) {
+
+        glm_data = x$model
+        glm_data$.econ_prior_weights = x$weights
+
+        stats::glm(
+            formula = x$formula,
+            data = glm_data,
+            weights = .econ_prior_weights,
+            family = x$family
+        )
+    })
+
+    # Single-model analysis of deviance
+    if (length(glm_models) == 1L) {
+        return(stats::anova(glm_models[[1L]], test = test))
+    }
+
+    # Multiple-model comparison
+    do.call(
+        stats::anova,
+        c(glm_models, list(test = test))
+    )
+}
+
+
+
+###### Model Augmentation ####
+
+#' @export
+augment.econ_binary = function(
+    x,
+    data = NULL,
+    newdata = NULL,
+    se_fit = FALSE,
+    ...
+) {
+
+    # Reconstruct the equivalent glm for standard diagnostics
+    glm_data = x$model
+    glm_data$.econ_prior_weights = x$weights
+
+    glm_ref = stats::glm(
+        formula = x$formula,
+        data = glm_data,
+        weights = .econ_prior_weights,
+        family = x$family
+    )
+
+    # Obtain standard broom augmentation
+    if (!is.null(newdata)) {
+
+        result = broom::augment(
+            glm_ref,
+            newdata = newdata,
+            se_fit = FALSE,
+            ...
+        )
+
+        prediction_data = newdata
+
+    } else {
+
+        result = broom::augment(
+            glm_ref,
+            se_fit = FALSE,
+            ...
+        )
+
+        prediction_data = NULL
+    }
+
+    
+    # Remove the artificial weights column for unweighted models
+    if ("(weights)" %in% names(result) &&
+        all(x$weights == 1)) {
+
+        result[["(weights)"]] = NULL
+    }
+
+    
+    # Remove existing prediction columns before inserting EconR values
+    result = result[
+        ,
+        !names(result) %in% c(".fitted", ".se.fit"),
+        drop = FALSE
+    ]
+
+    # Replace fitted values with EconR predictions
+    result$.fitted = unname(
+        predict(x, newdata = prediction_data, type = "link")
+    )
+
+    # Standard errors based on EconR's selected covariance matrix
+    if (isTRUE(se_fit)) {
+
+        if (is.null(prediction_data)) {
+
+            X = model.matrix(x)
+
+        } else {
+
+            terms_x = stats::delete.response(x$terms)
+
+            X = stats::model.matrix(
+                terms_x,
+                data = prediction_data,
+                contrasts.arg = x$contrasts,
+                xlev = x$xlevels
+            )
+        }
+
+        V = vcov(x)
+
+        se = sqrt(pmax(
+            rowSums((X %*% V) * X),
+            0
+        ))
+
+        result$.se.fit = unname(se)
+
+        
+
+        # Place prediction columns before diagnostic columns
+        prediction_columns = c(".fitted", ".se.fit")
+
+        diagnostic_columns = c(
+            ".resid",
+            ".hat",
+            ".sigma",
+            ".cooksd",
+            ".std.resid"
+        )
+
+        other_columns = setdiff(
+            names(result),
+            c(prediction_columns, diagnostic_columns)
+        )
+
+        column_order = c(
+            other_columns,
+            intersect(prediction_columns, names(result)),
+            intersect(diagnostic_columns, names(result))
+        )
+
+        result = result[, column_order, drop = FALSE]
+
+    } 
+
+    result
+
+} 
+
+
+
+
+
+
 
 
 

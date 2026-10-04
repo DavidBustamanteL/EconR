@@ -902,3 +902,521 @@ wages$married = rbinom(n, 1, plogis(eta))
         )
     }
 
+
+
+#### 17. Binary Confidence Intervals ####
+
+test_that("Binary confidence intervals use the selected covariance", {
+
+    for (link in c("logit", "probit")) {
+
+        fit = suppressWarnings(
+            econ_binary(
+            am ~ wt + hp,
+            data = mtcars,
+            link = link,
+            vcov = "HC3"
+        )
+    )
+
+        b = coef(fit)
+        se = sqrt(diag(vcov(fit)))
+        z = stats::qnorm(0.975)
+
+        expected = cbind(
+            b - z * se,
+            b + z * se
+        )
+
+        colnames(expected) = c("2.5 %", "97.5 %")
+
+        expect_equal(
+            confint(fit),
+            expected,
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            confint(fit, parm = "wt"),
+            expected["wt", , drop = FALSE],
+            tolerance = 1e-10
+        )
+
+        expect_error(confint(fit, level = 1))
+        expect_error(confint(fit, parm = "unknown"))
+    }
+})
+
+
+#### 18. Binary Fitted Values ####
+
+test_that("Binary fitted values match glm", {
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC3"
+            )
+        )
+
+        expect_equal(
+            fitted(econ),
+            fitted(ref),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            fitted(econ),
+            predict(econ, type = "response"),
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+
+#### 19. Binary Residuals ####
+
+test_that("Binary residuals match glm", {
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC3"
+            )
+        )
+
+        for (type in c(
+            "response",
+            "pearson",
+            "deviance",
+            "working",
+            "partial"
+        )) {
+
+            expect_equal(
+                unname(suppressWarnings(residuals(econ, type = type))),
+                unname(suppressWarnings(residuals(ref, type = type))),
+                tolerance = 1e-10
+            )
+        }
+    }
+})
+
+
+
+#### 20. Binary Model Weights ####
+
+test_that("Binary prior and working weights match glm", {
+
+    data = mtcars
+    data$w = data$disp / mean(data$disp)
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = data,
+                weights = w,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = data,
+                weights = w,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        expect_equal(
+            unname(weights(econ, type = "prior")),
+            unname(weights(ref, type = "prior")),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            unname(weights(econ, type = "working")),
+            unname(weights(ref, type = "working")),
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+
+#### 21. Binary Model Formula ####
+
+test_that("Binary formula extraction matches glm", {
+
+    f = am ~ wt * hp + I(wt^2)
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                f,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                f,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        expect_equal(
+            formula(econ),
+            formula(ref)
+        )
+    }
+})
+
+
+
+#### 22. Binary Analysis of Deviance ####
+
+test_that("Single-model binary ANOVA matches glm", {
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        expect_equal(
+            as.data.frame(
+                suppressWarnings(anova(econ, test = "Chisq"))
+            ),
+            as.data.frame(
+                suppressWarnings(anova(ref, test = "Chisq"))
+            ),
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+#### 23. Nested Binary Model Comparisons ####
+
+test_that("Nested binary ANOVA matches glm", {
+
+    for (link in c("logit", "probit")) {
+
+        ref1 = suppressWarnings(
+            stats::glm(
+                am ~ wt,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        ref2 = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = mtcars,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ1 = suppressWarnings(
+            econ_binary(
+                am ~ wt,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        econ2 = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        expect_equal(
+            as.data.frame(
+                suppressWarnings(anova(econ1, econ2, test = "Chisq"))
+            ),
+            as.data.frame(
+                suppressWarnings(anova(ref1, ref2, test = "Chisq"))
+            ),
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+test_that("Binary ANOVA rejects incompatible estimation samples", {
+
+    data = mtcars
+    data$hp[1] = NA
+
+    econ1 = econ_binary(
+        am ~ wt,
+        data = data,
+        link = "logit"
+    )
+
+    econ2 = econ_binary(
+        am ~ wt + hp,
+        data = data,
+        link = "logit"
+    )
+
+    expect_error(
+        anova(econ1, econ2, test = "Chisq"),
+        "identical estimation samples"
+    )
+})
+
+
+test_that("Binary ANOVA rejects different dependent-variable values", {
+
+    data1 = mtcars
+    data2 = mtcars
+
+    # Same sample and regressors, but a different outcome
+    data2$am[1] = 1 - data2$am[1]
+
+    econ1 = econ_binary(
+        am ~ wt,
+        data = data1,
+        link = "logit"
+    )
+
+    econ2 = econ_binary(
+        am ~ wt + hp,
+        data = data2,
+        link = "logit"
+    )
+
+    expect_error(
+        anova(econ1, econ2, test = "Chisq"),
+        "identical dependent-variable values"
+    )
+})
+
+
+
+#### 24. Binary Model Augmentation ####
+
+test_that("Binary augmentation matches fitted values and residuals", {
+
+    for (link in c("logit", "probit")) {
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        aug = suppressWarnings(
+            broom::augment(econ, se_fit = TRUE)
+        )
+
+        expect_equal(
+            aug$.fitted,
+            unname(predict(econ, type = "link")),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            aug$.resid,
+            unname(residuals(econ, type = "deviance")),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            nrow(aug),
+            nobs(econ)
+        )
+    }
+})
+
+
+test_that("Binary augmentation uses EconR covariance for prediction SEs", {
+
+    for (link in c("logit", "probit")) {
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        aug = suppressWarnings(
+            broom::augment(econ, se_fit = TRUE)
+        )
+
+        X = model.matrix(econ)
+        V = vcov(econ)
+
+        se_manual = sqrt(pmax(
+            rowSums((X %*% V) * X),
+            0
+        ))
+
+        expect_equal(
+            aug$.se.fit,
+            unname(se_manual),
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+test_that("Unweighted binary augmentation has standard broom columns", {
+
+    econ = econ_binary(
+        am ~ wt + hp,
+        data = mtcars,
+        link = "logit",
+        vcov = "HC1"
+    )
+
+    aug = broom::augment(econ, se_fit = TRUE)
+
+    expect_named(
+        aug,
+        c(
+            ".rownames",
+            "am",
+            "wt",
+            "hp",
+            ".fitted",
+            ".se.fit",
+            ".resid",
+            ".hat",
+            ".sigma",
+            ".cooksd",
+            ".std.resid"
+        )
+    )
+
+    expect_false("(weights)" %in% names(aug))
+})
+
+
+
+#### 25. Weighted Binary Augmentation ####
+
+test_that("Weighted binary augmentation matches glm", {
+
+    df = mtcars
+    df$w = df$disp / mean(df$disp)
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                am ~ wt + hp,
+                data = df,
+                weights = w,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = df,
+                weights = w,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        aug = suppressWarnings(
+            broom::augment(econ, se_fit = TRUE)
+        )
+
+        expect_equal(
+            aug$.fitted,
+            unname(predict(ref, type = "link")),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            aug$.resid,
+            unname(residuals(ref, type = "deviance")),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            aug[["(weights)"]],
+            unname(weights(ref)),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            anyDuplicated(names(aug)),
+            0L
+        )
+
+        expect_equal(
+            nrow(aug),
+            nobs(econ)
+        )
+    }
+})
+
+
+
+
+
