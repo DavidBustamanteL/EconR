@@ -105,3 +105,7 @@ car::linearHypothesis(
 )
 lmtest::waldtest(model_econr1, c("female", "exper:female"))
 waldtest(model_econr1, . ~ . - exper - exper:female, test = "F")
+
+
+# binary #
+
