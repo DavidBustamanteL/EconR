@@ -190,3 +190,168 @@ modelsummary(
 )
 
 
+
+#### 5. Logit with Interaction ####
+
+# glm
+model_int = glm(
+    married ~ educ * female + exper + nonwhite + wage,
+    data = wages,
+    family = binomial(link = "logit")
+)
+
+summary(model_int)
+tidy(model_int)
+
+
+# EconR
+model_econr_int = econ_binary(
+    married ~ educ * female + exper + nonwhite + wage,
+    data = wages,
+    link = "logit",
+    vcov = "HC1"
+)
+
+summary(model_econr_int)
+tidy(model_econr_int)
+
+
+# Compare coefficients
+all.equal(
+    coef(model_int),
+    coef(model_econr_int),
+    tolerance = 1e-10
+)
+
+# Compare HC1 covariance matrices
+all.equal(
+    sandwich::vcovHC(model_int, type = "HC1"),
+    vcov(model_econr_int),
+    tolerance = 1e-10
+)
+
+# Compare predicted probabilities
+all.equal(
+    predict(model_int, type = "response"),
+    predict(model_econr_int, type = "response"),
+    tolerance = 1e-10
+)
+
+
+#### 6. Logit with Quadratic Term ####
+
+# glm
+model_quad = glm(
+    married ~ educ + exper + I(exper^2) + nonwhite + female + wage,
+    data = wages,
+    family = binomial(link = "logit")
+)
+
+summary(model_quad)
+tidy(model_quad)
+
+
+# EconR
+model_econr_quad = econ_binary(
+    married ~ educ + exper + I(exper^2) + nonwhite + female + wage,
+    data = wages,
+    link = "logit",
+    vcov = "HC1"
+)
+
+summary(model_econr_quad)
+tidy(model_econr_quad)
+
+
+# Compare coefficients
+all.equal(
+    coef(model_quad),
+    coef(model_econr_quad),
+    tolerance = 1e-10
+)
+
+# Compare HC1 covariance matrices
+all.equal(
+    sandwich::vcovHC(model_quad, type = "HC1"),
+    vcov(model_econr_quad),
+    tolerance = 1e-10
+)
+
+# Compare predicted probabilities
+all.equal(
+    predict(model_quad, type = "response"),
+    predict(model_econr_quad, type = "response"),
+    tolerance = 1e-10
+)
+
+
+#### 7. Combined Interaction and Quadratic Terms ####
+
+# glm
+model_full = glm(
+    married ~ educ * female + exper + I(exper^2) + nonwhite + wage,
+    data = wages,
+    family = binomial(link = "logit")
+)
+
+summary(model_full)
+tidy(model_full)
+
+
+# EconR
+model_econr_full = econ_binary(
+    married ~ educ * female + exper + I(exper^2) + nonwhite + wage,
+    data = wages,
+    link = "logit",
+    vcov = "HC1"
+)
+
+summary(model_econr_full)
+tidy(model_econr_full)
+
+
+# Compare coefficients
+all.equal(
+    coef(model_full),
+    coef(model_econr_full),
+    tolerance = 1e-10
+)
+
+# Compare HC1 covariance matrices
+all.equal(
+    sandwich::vcovHC(model_full, type = "HC1"),
+    vcov(model_econr_full),
+    tolerance = 1e-10
+)
+
+# Compare predicted probabilities
+all.equal(
+    predict(model_full, type = "response"),
+    predict(model_econr_full, type = "response"),
+    tolerance = 1e-10
+)
+
+
+#### 8. Modelsummary ####
+
+modelsummary(
+    list(
+        "Interaction (glm)" = model_int,
+        "Interaction (EconR)" = model_econr_int,
+        "Quadratic (glm)" = model_quad,
+        "Quadratic (EconR)" = model_econr_quad,
+        "Combined (glm)" = model_full,
+        "Combined (EconR)" = model_econr_full
+    ),
+    vcov = list(
+        sandwich::vcovHC(model_int, type = "HC1"),
+        vcov(model_econr_int),
+        sandwich::vcovHC(model_quad, type = "HC1"),
+        vcov(model_econr_quad),
+        sandwich::vcovHC(model_full, type = "HC1"),
+        vcov(model_econr_full)
+    ),
+    stars = TRUE,
+    output = "default"
+)
+

@@ -836,3 +836,69 @@ test_that("Binary models support broom and modelsummary", {
         ))
     }
 })
+
+
+#### 16. Interaction and Quadratic Terms ####
+
+set.seed(123)
+
+n = 600
+
+wages = data.frame(
+    educ = sample(8:20, n, replace = TRUE),
+    exper = sample(0:40, n, replace = TRUE),
+    nonwhite = rbinom(n, 1, 0.25),
+    female = rbinom(n, 1, 0.50),
+    wage = runif(n, 5, 35)
+)
+
+eta = with(
+    wages,
+    -2 + 0.08 * educ - 0.3 * female +
+        0.015 * educ * female +
+        0.12 * exper - 0.002 * exper^2 +
+        0.03 * wage - 0.4 * nonwhite
+)
+
+wages$married = rbinom(n, 1, plogis(eta))
+
+    formulas = list(
+        interaction = married ~ educ * female + exper + nonwhite + wage,
+        quadratic = married ~ educ + exper + I(exper^2) + nonwhite + female + wage,
+        combined = married ~ educ * female + exper + I(exper^2) + nonwhite + wage
+    )
+
+    for (f in formulas) {
+
+        ref = stats::glm(
+            f,
+            data = wages,
+            family = stats::binomial(link = "logit")
+        )
+
+        econ = econ_binary(
+            f,
+            data = wages,
+            link = "logit",
+            vcov = "HC1"
+        )
+
+        expect_equal(
+            coef(econ),
+            coef(ref),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            vcov(econ),
+            sandwich::vcovHC(ref, type = "HC1"),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            unname(predict(econ, type = "response")),
+            unname(predict(ref, type = "response")),
+            tolerance = 1e-10
+        )
+    }
+
