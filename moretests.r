@@ -109,3 +109,84 @@ waldtest(model_econr1, . ~ . - exper - exper:female, test = "F")
 
 # binary #
 
+#### 1. Standard Logit ####
+
+# glm
+model = glm(
+    married ~ educ + exper + nonwhite + female + wage,
+    data = wages,
+    family = binomial(link = "logit")
+)
+
+summary(model)
+tidy(model)
+
+
+# EconR
+model_econr = econ_binary(
+    married ~ educ + exper + nonwhite + female + wage,
+    data = wages,
+    link = "logit",
+    vcov = "classical"
+)
+
+summary(model_econr)
+tidy(model_econr)
+
+
+#### 2. Compare Results ####
+
+# Coefficients
+all.equal(
+    coef(model),
+    coef(model_econr),
+    tolerance = 1e-10
+)
+
+# Covariance matrices
+all.equal(
+    vcov(model),
+    vcov(model_econr),
+    tolerance = 1e-10
+)
+
+# Predicted probabilities
+all.equal(
+    predict(model, type = "response"),
+    predict(model_econr, type = "response"),
+    tolerance = 1e-10
+)
+
+
+#### 3. Robust Standard Errors (HC1) ####
+
+model_econr_HC1 = econ_binary(
+    married ~ educ + exper + nonwhite + female + wage,
+    data = wages,
+    link = "logit",
+    vcov = "HC1"
+)
+
+# Compare standard errors
+cbind(
+    glm = sqrt(diag(sandwich::vcovHC(model, type = "HC1"))),
+    EconR = sqrt(diag(vcov(model_econr_HC1)))
+)
+
+
+#### 4. Modelsummary ####
+
+modelsummary(
+    list(
+        "glm" = model,
+        "EconR" = model_econr_HC1
+    ),
+    vcov = list(
+        sandwich::vcovHC(model, type = "HC1"),
+        vcov(model_econr_HC1)
+    ),
+    stars = TRUE,
+    output = "default"
+)
+
+
