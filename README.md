@@ -311,8 +311,8 @@ The automated test suite currently contains:
 | Model family | Passing tests |
 |---|---:|
 | Linear models (OLS/WLS) | 403 |
-| Binary models (Logit/Probit) | 130 |
-| **Total** | **533** |
+| Binary models (Logit/Probit) | 139 |
+| **Total** | **542** |
 
 The complete package successfully passes `R CMD check`:
 
