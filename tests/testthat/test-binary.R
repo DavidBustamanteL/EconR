@@ -1417,6 +1417,174 @@ test_that("Weighted binary augmentation matches glm", {
 })
 
 
+#### 26. Binary Missing-Data Semantics ####
 
+test_that("Binary models handle formula missingness like glm", {
+
+    set.seed(123)
+
+    n = 1000
+
+    df = data.frame(
+        x1 = rnorm(n),
+        x2 = rnorm(n),
+        x3 = rnorm(n)
+    )
+
+    eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 + 0.6 * df$x3
+    df$y = rbinom(n, 1, plogis(eta))
+
+    df$x1[sample(n, 50)] = NA
+    df$x2[sample(n, 70)] = NA
+    df$x3[sample(n, 40)] = NA
+    df$y[sample(n, 30)] = NA
+
+    for (link in c("logit", "probit")) {
+
+        ref = suppressWarnings(
+            stats::glm(
+                y ~ x1 + x2 + x3,
+                data = df,
+                family = stats::binomial(link = link)
+            )
+        )
+
+        econ = suppressWarnings(
+            econ_binary(
+                y ~ x1 + x2 + x3,
+                data = df,
+                link = link
+            )
+        )
+
+        expect_equal(
+            nobs(econ),
+            nobs(ref)
+        )
+
+        expect_equal(
+            unname(coef(econ)),
+            unname(coef(ref)),
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            unname(fitted(econ)),
+            unname(fitted(ref)),
+            tolerance = 1e-10
+        )
+
+        expect_identical(
+            econ$used,
+            as.integer(rownames(model.frame(ref)))
+        )
+    }
+})
+
+
+test_that("Binary models handle missing weights like glm", {
+
+    set.seed(456)
+
+    df = mtcars
+    rownames(df) = NULL
+
+    df$w = runif(nrow(df), 0.5, 2)
+    df$w[sample(nrow(df), 5)] = NA
+
+    ref = suppressWarnings(
+        stats::glm(
+            am ~ wt + hp,
+            data = df,
+            weights = w,
+            family = stats::binomial(link = "logit")
+        )
+    )
+
+    econ = suppressWarnings(
+        econ_binary(
+            am ~ wt + hp,
+            data = df,
+            weights = w,
+            link = "logit"
+        )
+    )
+
+    expect_equal(
+        nobs(econ),
+        nobs(ref)
+    )
+
+    expect_equal(
+        unname(coef(econ)),
+        unname(coef(ref)),
+        tolerance = 1e-10
+    )
+
+    expect_equal(
+        unname(weights(econ, type = "prior")),
+        unname(weights(ref, type = "prior")),
+        tolerance = 1e-10
+    )
+
+    expect_identical(
+        econ$used,
+        as.integer(rownames(model.frame(ref)))
+    )
+})
+
+
+test_that("Cluster missingness affects sample only for clustered inference", {
+
+    set.seed(789)
+
+    df = mtcars
+    rownames(df) = NULL
+
+    df$cluster_id = rep(1:8, length.out = nrow(df))
+    df$cluster_id[sample(nrow(df), 5)] = NA
+
+    econ_hc = econ_binary(
+        am ~ wt + hp,
+        data = df,
+        link = "logit",
+        vcov = "HC1"
+    )
+
+    expect_warning(
+        econ_binary(
+            am ~ wt + hp,
+            data = df,
+            link = "logit",
+            vcov = "CR0",
+            cluster = cluster_id
+        ),
+        "missingness in the cluster"
+    )
+
+    econ_cl = suppressWarnings(
+        econ_binary(
+            am ~ wt + hp,
+            data = df,
+            link = "logit",
+            vcov = "CR0",
+            cluster = cluster_id
+        )
+    )
+
+    expect_equal(
+        nobs(econ_hc),
+        nrow(df)
+    )
+
+    expect_lt(
+        nobs(econ_cl),
+        nobs(econ_hc)
+    )
+
+    expect_true(
+        all(!is.na(df$cluster_id[econ_cl$used]))
+    )
+})
 
 

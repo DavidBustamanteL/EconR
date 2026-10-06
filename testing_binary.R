@@ -1280,6 +1280,234 @@ modelsummary::modelsummary(
 )
 
 
+#### NAs ####
+set.seed(123)
+
+n = 1000
+
+df = data.frame(
+    x1 = rnorm(n),
+    x2 = rnorm(n),
+    x3 = rnorm(n)
+)
+
+# Generate binary outcome
+eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 + 0.6 * df$x3
+p = plogis(eta)
+
+df$y = rbinom(n, 1, p)
+
+# Introduce NAs in different variables
+df$x1[sample(n, 50)] = NA
+df$x2[sample(n, 70)] = NA
+df$x3[sample(n, 40)] = NA
+df$y[sample(n, 30)] = NA
+
+# Reference GLM
+ref = glm(
+    y ~ x1 + x2 + x3,
+    data = df,
+    family = binomial(link = "logit")
+)
+
+# EconR
+econ = econ_binary(
+    y ~ x1 + x2 + x3,
+    data = df,
+    link = "logit"
+)
+
+# Compare estimation sample
+cat("glm nobs:  ", nobs(ref), "\n")
+cat("EconR nobs:", nobs(econ), "\n\n")
+
+# Coefficients
+print(coef(ref))
+print(coef(econ))
+
+cat("\nCoefficient equality:\n")
+print(all.equal(
+    unname(coef(econ)),
+    unname(coef(ref)),
+    tolerance = 1e-10
+))
+
+# Fitted probabilities
+cat("\nFitted-value equality:\n")
+print(all.equal(
+    unname(fitted(econ)),
+    unname(fitted(ref)),
+    tolerance = 1e-10
+))
+
+# Which observations were actually used
+cat("\nUsed-row equality:\n")
+print(identical(
+    as.integer(rownames(model.frame(ref))),
+    econ$used
+))
+
+# Number omitted
+cat("\nNumber omitted:\n")
+cat("glm:  ", n - nobs(ref), "\n")
+cat("EconR:", n - nobs(econ), "\n")
+
+
+#### Logit Missing Weights Validation ####
+
+set.seed(456)
+
+df$w = runif(nrow(df), 0.5, 2)
+
+# Add missing weights
+df$w[sample(nrow(df), 60)] = NA
+
+ref = glm(
+    y ~ x1 + x2 + x3,
+    data = df,
+    weights = w,
+    family = binomial(link = "logit")
+)
+
+econ = econ_binary(
+    y ~ x1 + x2 + x3,
+    data = df,
+    weights = w,
+    link = "logit"
+)
+
+cat("glm nobs:  ", nobs(ref), "\n")
+cat("EconR nobs:", nobs(econ), "\n\n")
+
+cat("Coefficient equality:\n")
+print(all.equal(
+    unname(coef(econ)),
+    unname(coef(ref)),
+    tolerance = 1e-10
+))
+
+cat("\nFitted-value equality:\n")
+print(all.equal(
+    unname(fitted(econ)),
+    unname(fitted(ref)),
+    tolerance = 1e-10
+))
+
+cat("\nUsed-row equality:\n")
+print(identical(
+    as.integer(rownames(model.frame(ref))),
+    econ$used
+))
+
+cat("\nWeight equality:\n")
+print(all.equal(
+    unname(weights(econ, type = "prior")),
+    unname(weights(ref, type = "prior")),
+    tolerance = 1e-10
+))
+
+
+#### Logit Cluster Missingness ####
+
+set.seed(789)
+
+df$cluster_id = rep(1:100, length.out = nrow(df))
+df$cluster_id[sample(nrow(df), 50)] = NA
+
+# EconR without clustering
+econ_hc = econ_binary(
+    y ~ x1 + x2 + x3,
+    data = df,
+    link = "logit",
+    vcov = "HC1"
+)
+
+# EconR with clustering
+econ_cl = econ_binary(
+    y ~ x1 + x2 + x3,
+    data = df,
+    link = "logit",
+    vcov = "CR0",
+    cluster = cluster_id
+)
+
+cat("HC1 nobs:     ", nobs(econ_hc), "\n")
+cat("Cluster nobs: ", nobs(econ_cl), "\n")
+
+cat("\nCluster NAs reduce sample:\n")
+print(nobs(econ_cl) < nobs(econ_hc))
+
+cat("\nNo cluster NA remains in estimation sample:\n")
+print(all(!is.na(df$cluster_id[econ_cl$used])))
+
+
+#### Probit Missing-Data Validation ####
+
+ref = glm(
+    y ~ x1 + x2 + x3,
+    data = df,
+    family = binomial(link = "probit")
+)
+
+econ = suppressWarnings(
+    econ_binary(
+        y ~ x1 + x2 + x3,
+        data = df,
+        link = "probit"
+    )
+)
+
+cat("glm nobs:  ", nobs(ref), "\n")
+cat("EconR nobs:", nobs(econ), "\n")
+
+print(all.equal(
+    unname(coef(econ)),
+    unname(coef(ref)),
+    tolerance = 1e-10
+))
+
+print(identical(
+    as.integer(rownames(model.frame(ref))),
+    econ$used
+))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #### Dev Tool Testing ####
 devtools::load_all()
