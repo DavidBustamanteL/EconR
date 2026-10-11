@@ -366,8 +366,9 @@ if (type == "CR2") {
 ###### 4. Binary Model Summary ####
 
 #' @export
-summary.econ_binary <- function(
+summary.econ_binary = function(
     object,
+    extra.significance = FALSE,
     ...
 ) {
 
@@ -411,7 +412,8 @@ summary.econ_binary <- function(
         null.deviance = object$null.deviance,
         df.residual = object$df.residual,
         converged = object$converged,
-        iter = object$iter
+        iter = object$iter,
+        extra.significance = extra.significance
     )
 
     class(ans) = "summary.econ_binary"
@@ -423,7 +425,7 @@ summary.econ_binary <- function(
 ###### 5. Print Binary Model Summary ####
 
 #' @export
-print.summary.econ_binary <- function(
+print.summary.econ_binary = function(
     x,
     ...
 ) {
@@ -451,6 +453,43 @@ print.summary.econ_binary <- function(
 
     coef_table = x$coefficients
 
+    ##### Significance symbols ####
+
+    p_values = coef_table[, "Pr(>|z|)"]
+
+    if (isTRUE(x$extra.significance)) {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.001, "+",
+                ifelse(
+                    p_values < 0.01, "***",
+                    ifelse(
+                        p_values < 0.05, "**",
+                        ifelse(p_values < 0.10, "*", "")
+                    )
+                )
+            )
+        )
+
+    } else {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.01, "***",
+                ifelse(
+                    p_values < 0.05, "**",
+                    ifelse(p_values < 0.10, "*", "")
+                )
+            )
+        )
+    }
+
+
+    ###### 4. Format coefficient table ####
+
     formatted = matrix(
         "",
         nrow = nrow(coef_table),
@@ -466,6 +505,14 @@ print.summary.econ_binary <- function(
         )
     }
 
+
+    ###### 5. Add significance symbols ####
+
+    formatted = cbind(
+        formatted,
+        " " = stars
+    )
+
     print(
         formatted,
         quote = FALSE,
@@ -473,7 +520,23 @@ print.summary.econ_binary <- function(
     )
 
 
-    ###### 4. Print deviance ####
+    ###### 6. Print significance legend ####
+
+    if (isTRUE(x$extra.significance)) {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01, + p < 0.001\n"
+        )
+
+    } else {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01\n"
+        )
+    }
+
+
+    ###### 7. Print deviance ####
 
     cat(
         "\nNull deviance: ",
@@ -492,7 +555,7 @@ print.summary.econ_binary <- function(
     )
 
 
-    ###### 5. Print convergence ####
+    ###### 8. Print convergence ####
 
     cat(
         "Converged: ",
@@ -505,7 +568,6 @@ print.summary.econ_binary <- function(
 
     invisible(x)
 }
-
 
 ###### 6. Log-Likelihood Method ####
 

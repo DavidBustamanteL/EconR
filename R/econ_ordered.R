@@ -1,8 +1,3 @@
-utils::globalVariables(c(
-    ".econ_ordered_weights",
-    ".econ_ordered_subset"
-))
-
 ###### 1. Ordered Logit and Probit Estimation ####
 
 #' Ordered Logit and Probit Regression
@@ -13,7 +8,7 @@ utils::globalVariables(c(
 #' @param weights Optional observation weights.
 #' @param subset Optional subset of observations.
 #' @param na.action Missing-value handling function.
-#' @param vcov Covariance estimator: "classical", "HC0", "HC1", or "CR0".
+#' @param vcov Covariance estimator: "classical", "HC0", "HC1", "CR0", or "CR1".
 #' @param cluster Optional clustering variable.
 #' @return An object of class "econ_ordered" and "polr".
 #' @export
@@ -98,7 +93,7 @@ econ_ordered = function(
     }
 
     if (vcov %in% c("CR0", "CR1") && is.null(evaluated_cluster)) {
-      stop("CR0 and CR1 require a cluster variable.")
+        stop("CR0 and CR1 require a cluster variable.")
     }
 
     # Construct model frame
@@ -301,7 +296,7 @@ vcov.econ_ordered = function(object, ...) {
     } else if (object$vcov_type %in% c("CR0", "CR1")) {
 
         if (is.null(object$cluster)) {
-            stop("CR0 requires a cluster variable.")
+            stop("CR0 and CR1 require a cluster variable.")
         }
 
         cluster = as.factor(object$cluster)
@@ -323,17 +318,18 @@ vcov.econ_ordered = function(object, ...) {
         )
 
         M = crossprod(cluster_scores)
-      
-      if (object$vcov_type == "CR1") {
-        n = nrow(S)
-        k = ncol(S)
 
-      if (n <= k) {
-          stop("CR1 requires more observations than estimated parameters.")
-      }
+        if (object$vcov_type == "CR1") {
 
-      M = M * (n - 1) / (n - k)
-}
+            n = nrow(S)
+            k = ncol(S)
+
+            if (n <= k) {
+                stop("CR1 requires more observations than estimated parameters.")
+            }
+
+            M = M * (n - 1) / (n - k)
+        }
 
     } else {
 
@@ -348,4 +344,244 @@ vcov.econ_ordered = function(object, ...) {
     dimnames(V) = dimnames(V_classical)
 
     return(V)
+}
+
+
+###### 4. Ordered Model Summary ####
+
+#' @export
+summary.econ_ordered = function(
+    object,
+    extra.significance = FALSE,
+    ...
+) {
+
+    ###### 1. Extract coefficients and covariance ####
+
+    estimate = c(
+        stats::coef(object),
+        object$zeta
+    )
+
+    V = stats::vcov(object)
+
+    std_error = sqrt(diag(V))
+    std_error = std_error[names(estimate)]
+
+
+    ###### 2. Compute coefficient inference ####
+
+    z_value = estimate / std_error
+
+    p_value = 2 * stats::pnorm(
+        abs(z_value),
+        lower.tail = FALSE
+    )
+
+
+    ###### 3. Construct coefficient table ####
+
+    coef_table = cbind(
+        Estimate = estimate,
+        "Std. Error" = std_error,
+        "z value" = z_value,
+        "Pr(>|z|)" = p_value
+    )
+
+
+    ###### 4. Construct summary object ####
+
+    ans = list(
+        call = object$call,
+        coefficients = coef_table,
+        link = object$link,
+        vcov_type = object$vcov_type,
+        residual.deviance = object$deviance,
+        AIC = object$deviance + 2 * length(estimate),
+        df.residual = object$df.residual,
+        extra.significance = extra.significance
+    )
+
+    class(ans) = "summary.econ_ordered"
+
+    ans
+}
+
+
+###### 5. Print Ordered Model Summary ####
+
+#' @export
+print.summary.econ_ordered = function(
+    x,
+    ...
+) {
+
+    ###### 1. Print call ####
+
+    cat("\nCall:\n")
+
+    print(x$call)
+
+
+    ###### 2. Print model information ####
+
+    cat(
+        "\nOrdered response model: ",
+        x$link,
+        "\nCovariance type: ",
+        x$vcov_type,
+        "\n",
+        sep = ""
+    )
+
+
+    ###### 3. Print coefficients ####
+
+    cat("\nCoefficients:\n")
+
+    coef_table = x$coefficients
+
+    ##### Significance symbols ####
+
+    p_values = coef_table[, "Pr(>|z|)"]
+    
+    if (isTRUE(x$extra.significance)) {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.001, "+",
+                ifelse(
+                    p_values < 0.01, "***",
+                    ifelse(
+                        p_values < 0.05, "**",
+                        ifelse(p_values < 0.10, "*", "")
+                    )
+                )
+            )
+        )
+
+    } else {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.01, "***",
+                ifelse(
+                    p_values < 0.05, "**",
+                    ifelse(p_values < 0.10, "*", "")
+                )
+            )
+        )
+    }
+
+
+    ###### 4. Format coefficient table ####
+
+    formatted = matrix(
+        "",
+        nrow = nrow(coef_table),
+        ncol = ncol(coef_table),
+        dimnames = dimnames(coef_table)
+    )
+
+    for (j in seq_len(ncol(coef_table))) {
+
+        formatted[, j] = sprintf(
+            "%.5f",
+            coef_table[, j]
+        )
+    }
+
+
+    ###### 5. Add significance symbols ####
+
+    formatted = cbind(
+        formatted,
+        " " = stars
+    )
+
+    print(
+        formatted,
+        quote = FALSE,
+        right = TRUE
+    )
+
+
+    ###### 6. Print significance legend ####
+
+    if (isTRUE(x$extra.significance)) {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01, + p < 0.001\n"
+        )
+
+    } else {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01\n"
+        )
+    }
+
+
+    ###### 7. Print model fit ####
+
+    cat(
+        "\nResidual deviance: ",
+        sprintf("%.5f", x$residual.deviance),
+        "\nAIC: ",
+        sprintf("%.5f", x$AIC),
+        "\n",
+        sep = ""
+    )
+
+    invisible(x)
+}
+
+
+###### 6. Global Variables ####
+
+utils::globalVariables(c(
+    ".econ_ordered_weights",
+    ".econ_ordered_subset"
+))
+
+
+###### 7. Ordered Model Tidy Method ####
+
+#' @export
+tidy.econ_ordered = function(x, conf.int = FALSE,
+                             conf.level = 0.95, ...) {
+
+    s = summary(x)
+
+    tab = s$coefficients
+
+    result = data.frame(
+        term = rownames(tab),
+        estimate = unname(tab[, "Estimate"]),
+        std.error = unname(tab[, "Std. Error"]),
+        statistic = unname(tab[, "z value"]),
+        p.value = unname(tab[, "Pr(>|z|)"]),
+        coef.type = ifelse(
+            rownames(tab) %in% names(x$zeta),
+            "scale",
+            "coefficient"
+        ),
+        row.names = NULL
+    )
+
+    if (isTRUE(conf.int)) {
+        critical = stats::qnorm(
+            1 - (1 - conf.level) / 2
+        )
+
+        result$conf.low = result$estimate -
+            critical * result$std.error
+
+        result$conf.high = result$estimate +
+            critical * result$std.error
+    }
+
+    tibble::as_tibble(result)
 }

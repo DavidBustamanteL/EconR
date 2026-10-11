@@ -72,3 +72,6 @@ export(econ_ordered)
 
 S3method(vcov,econ_ordered)
 S3method(estfun,econ_ordered)
+S3method(summary,econ_ordered)
+S3method(print,summary.econ_ordered)
+S3method(tidy,econ_ordered)

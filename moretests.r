@@ -40,7 +40,7 @@ tidy(model_econr)
 modelsummary(
     model_econr,
     stars = TRUE,
-    output = "default"
+    output = "markdown"
 )
 
 # WeightIt -> HC0 in WeightIT is HC1 in all other packages

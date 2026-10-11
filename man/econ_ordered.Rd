@@ -28,7 +28,7 @@ econ_ordered(
 
 \item{na.action}{Missing-value handling function.}
 
-\item{vcov}{Covariance estimator: "classical", "HC0", "HC1", or "CR0".}
+\item{vcov}{Covariance estimator: "classical", "HC0", "HC1", "CR0", or "CR1".}
 
 \item{cluster}{Optional clustering variable.}
 }

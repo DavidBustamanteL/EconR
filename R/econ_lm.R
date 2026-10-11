@@ -1508,8 +1508,9 @@ predict.econ_lm <- function(
 ###### 4. Summary ####
 
 #' @export
-summary.econ_lm <- function(
+summary.econ_lm = function(
     object,
+    extra.significance = FALSE,
     ...
 ) {
 
@@ -1726,7 +1727,8 @@ summary.econ_lm <- function(
         fstatistic = f_statistic,
         f.df1 = f_df1,
         f.df2 = f_df2,
-        f.p.value = f_p_value
+        f.p.value = f_p_value,
+        extra.significance = extra.significance
     )
 
     class(ans) <- "summary.econ_lm"
@@ -1772,6 +1774,45 @@ print.summary.econ_lm <- function(
 
     coef_table <- x$coefficients
 
+    ##### Significance symbols ####
+
+    p_values = coef_table[, "Pr(>|t|)"]
+
+        ##### Significance symbols ####
+
+    p_values = coef_table[, "Pr(>|t|)"]
+
+    if (isTRUE(x$extra.significance)) {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.001, "+",
+                ifelse(
+                    p_values < 0.01, "***",
+                    ifelse(
+                        p_values < 0.05, "**",
+                        ifelse(p_values < 0.10, "*", "")
+                    )
+                )
+            )
+        )
+
+    } else {
+
+        stars = ifelse(
+            is.na(p_values), "",
+            ifelse(
+                p_values < 0.01, "***",
+                ifelse(
+                    p_values < 0.05, "**",
+                    ifelse(p_values < 0.10, "*", "")
+                )
+            )
+        )
+    }
+    
+
     formatted <- matrix(
         "",
         nrow = nrow(coef_table),
@@ -1799,11 +1840,31 @@ print.summary.econ_lm <- function(
         coef_table[, "Pr(>|t|)"]
     )
 
+    ###### Add significance symbols ####
+
+    formatted = cbind(
+        formatted,
+        " " = stars
+    )
+
     print(
         formatted,
         quote = FALSE,
         right = TRUE
     )
+
+        if (isTRUE(x$extra.significance)) {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01, + p < 0.001\n"
+        )
+
+    } else {
+
+        cat(
+            "\nSignificance: * p < 0.1, ** p < 0.05, *** p < 0.01\n"
+        )
+    }
 
 
     ###### 4. Print model-fit statistics ####
