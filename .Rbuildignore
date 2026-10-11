@@ -5,3 +5,4 @@
 ^testing\.r$
 ^wage1\.csv$
 ^testing_binary\.R$
+^testing_ordered\.R$

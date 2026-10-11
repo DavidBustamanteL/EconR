@@ -32,6 +32,7 @@ importFrom(stats,anova)
 importFrom(stats,formula)
 importFrom(stats,printCoefmat)
 
+
 # Binary
 export(econ_binary)
 
@@ -64,3 +65,10 @@ importFrom(stats,coef)
 importFrom(stats,model.matrix)
 importFrom(stats,predict)
 importFrom(stats,vcov)
+
+
+# Ordered
+export(econ_ordered)
+
+S3method(vcov,econ_ordered)
+S3method(estfun,econ_ordered)

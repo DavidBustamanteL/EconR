@@ -683,8 +683,7 @@ test_that("one usable observation is handled", {
 
 test_that("saturated full-rank model is handled", {
 
-    df_exact = mtcars %>%
-        slice(1:3)
+    df_exact = mtcars %>% dplyr::slice(1:3)
 
     expect_warning(
         econ_lm(
@@ -1168,6 +1167,7 @@ test_that("offset models match lm", {
 })
 
 
+
 test_that("offset prediction evaluates offset in new data", {
 
     m_econ = econ_lm(
@@ -1182,8 +1182,8 @@ test_that("offset prediction evaluates offset in new data", {
     )
 
     new_offset = mtcars %>%
-        slice(1:5) %>%
-        mutate(
+        dplyr::slice(1:5) %>%
+        dplyr::mutate(
             wt = wt * 1.05,
             disp = disp * 1.10
         )
