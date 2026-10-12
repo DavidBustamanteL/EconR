@@ -102,10 +102,22 @@ The available covariance estimators depend on the model family.
 | `"HC1"` | Yes | Yes | Yes |
 | `"HC2"` | Yes | Yes | — |
 | `"HC3"` | Yes | Yes | — |
+| `"HC4"` | Yes | — | — |
+| `"HC4m"` | Yes | — | — |
+| `"HC5"` | Yes | — | — |
 | `"CR0"` | Yes | Yes | Yes |
-| `"CR1"` | — | — | Yes |
+| `"CR1"` | Yes | — | Yes |
+| `"CR1p"` | Yes | — | — |
+| `"CR1S"` | Yes | — | — |
 | `"CR2"` | Yes | Yes | — |
+| `"CR3"` | Yes | — | — |
 | `"stata"` | Yes | Yes | — |
+
+For linear models, EconR supports all seven heteroskedasticity-consistent (HC) covariance estimators available through `sandwich::vcovHC()` and all six cluster-robust (CR) covariance estimators available through `clubSandwich::vcovCR()`.
+
+HC estimators account for heteroskedasticity, while CR estimators additionally allow within-cluster error dependence. The `"stata"` option provides Stata-style cluster-robust covariance estimation.
+
+The availability of covariance estimators for binary and ordered response models differs from that for linear models.
 
 Robust covariance estimation builds on established infrastructure from `sandwich` and `clubSandwich`.
 
@@ -471,15 +483,15 @@ The automated test suite currently contains:
 
 | Model family | Passing tests |
 |---|---:|
-| Linear models (OLS/WLS) | 403 |
+| Linear models (OLS/WLS) | 490 |
 | Binary models (Logit/Probit) | 209 |
 | Ordered models (Logit/Probit) | 155 |
-| **Total** | **767** |
+| **Total** | **864** |
 
 The complete test suite passes:
 
 ```text
-FAIL 0 | WARN 0 | SKIP 0 | PASS 767
+FAIL 0 | WARN 0 | SKIP 0 | PASS 864
 ```
 
 The package also successfully passes `R CMD check`:

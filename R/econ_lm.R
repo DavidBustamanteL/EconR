@@ -142,13 +142,51 @@
     }
 
 
-    #### 9. Return model-frame information ####
+    #### 9. Evaluate and align cluster identifiers ####
+
+    cl_used = NULL
+
+    if (!is.null(cluster_expr)) {
+
+        cl_full = eval(
+            cluster_expr,
+            envir = data,
+            enclos = enclos
+        )
+
+        if (length(cl_full) != nrow(data)) {
+            stop(
+                "'cluster' must have one value per row of data.",
+                call. = FALSE
+            )
+        }
+
+        if (anyNA(used)) {
+            stop(
+                "Could not align cluster identifiers with the estimation sample.",
+                call. = FALSE
+            )
+        }
+
+        cl_used = cl_full[used]
+
+        if (anyNA(cl_used)) {
+            stop(
+                "Cluster identifiers contain missing values in the estimation sample.",
+                call. = FALSE
+            )
+        }
+    }
+
+
+    #### 10. Return model-frame information ####
 
     list(
         frame = mf,
         used = used,
         omitted = omitted,
-        weights = w
+        weights = w,
+        cluster = cl_used
     )
 }
 
@@ -164,8 +202,8 @@
 #' @param weights optional non-negative observation weights
 #' @param subset optional subset
 #' @param na.action missing-data action; defaults to na.omit
-#' @param vcov covariance type: classical, HC0, HC1, HC2, HC3, CR0, CR2, or stata
-#' @param cluster optional cluster variable/vector; required for CR0, CR2, and stata
+#' @param vcov covariance estimator: classical, HC0, HC1, HC2, HC3, HC4, HC4m, HC5, CR0, CR1, CR1p, CR1S, CR2, CR3, or stata
+#' @param cluster optional cluster variable/vector; required for all CR estimators and stata
 #'
 #' @export
 econ_lm <- function(
@@ -174,16 +212,11 @@ econ_lm <- function(
     weights = NULL,
     subset = NULL,
     na.action = stats::na.omit,
-    vcov = c(
-        "classical",
-        "HC0",
-        "HC1",
-        "HC2",
-        "HC3",
-        "CR0",
-        "CR2",
-        "stata"
-    ),
+vcov = c(
+    "classical",
+    "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+    "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3",
+    "stata"),
     cluster = NULL
 ) {
 
@@ -404,7 +437,11 @@ if (df.residual > 0) {
 
     cluster_types = c(
         "CR0",
+        "CR1",
+        "CR1p",
+        "CR1S",
         "CR2",
+        "CR3",
         "stata"
     )
 
@@ -413,27 +450,23 @@ if (df.residual > 0) {
         "HC0",
         "HC1",
         "HC2",
-        "HC3"
+        "HC3",
+        "HC4",
+        "HC4m",
+        "HC5"
     )
 
-    if (
-        vcov %in% cluster_types &&
-        is.null(cl_used)
-    ) {
+    if (vcov %in% cluster_types && is.null(cl_used)) {
         stop(
             paste0(
-                "vcov = '",
-                vcov,
+                "vcov = '", vcov,
                 "' requires a cluster variable."
             ),
             call. = FALSE
         )
     }
 
-    if (
-        !is.null(cl_used) &&
-        vcov %in% noncluster_types
-    ) {
+    if (!is.null(cl_used) && vcov %in% noncluster_types) {
         stop(
             paste0(
                 "A cluster variable was supplied, but vcov = '",
@@ -442,6 +475,37 @@ if (df.residual > 0) {
             ),
             call. = FALSE
         )
+    }
+
+    if (vcov %in% cluster_types) {
+
+        positive = w > 0
+        G = length(unique(cl_used[positive]))
+        N = sum(positive)
+        K = rank
+
+        if (G < 2L) {
+            stop(
+                "Cluster-robust covariance requires at least two clusters.",
+                call. = FALSE
+            )
+        }
+
+        if (vcov == "CR1p" && G <= K) {
+            stop(
+                "CR1p requires more clusters than estimated parameters (G > K).",
+                call. = FALSE
+            )
+        }
+
+        if (vcov %in% c("CR1S", "stata") && N <= K) {
+            stop(
+                "CR1S and stata require more observations than estimated parameters (N > K).",
+                call. = FALSE
+            )
+        }
+
+        
     }
 
 
@@ -617,7 +681,10 @@ if (type == "classical") {
         "HC0",
         "HC1",
         "HC2",
-        "HC3"
+        "HC3",
+        "HC4",
+        "HC4m",
+        "HC5"
     )) {
 
         V <- sandwich::vcovHC(
@@ -631,21 +698,30 @@ if (type == "classical") {
     }
 
 
-    ###### 5. CR0 clustered covariance ####
+        ###### 5. Cluster-robust covariance ####
 
-    if (type == "CR0") {
+    cr_types = c(
+        "CR0",
+        "CR1",
+        "CR1p",
+        "CR1S",
+        "CR2",
+        "CR3"
+    )
 
-        if (is.null(object$cluster)) {
+    if (type %in% cr_types) {
+
+        if (is.null(reduced$cluster)) {
             stop(
-                "CR0 clustered covariance requires a cluster variable.",
+                paste0(type, " requires a cluster variable."),
                 call. = FALSE
             )
         }
 
-        V <- clubSandwich::vcovCR(
+        V = clubSandwich::vcovCR(
             reduced,
             cluster = reduced$cluster,
-            type = "CR0"
+            type = type
         )
 
         return(
@@ -654,41 +730,18 @@ if (type == "classical") {
     }
 
 
-    ###### 6. CR2 clustered covariance ####
-
-    if (type == "CR2") {
-
-        if (is.null(object$cluster)) {
-            stop(
-                "CR2 clustered covariance requires a cluster variable.",
-                call. = FALSE
-            )
-        }
-
-        V <- clubSandwich::vcovCR(
-            reduced,
-            cluster = reduced$cluster,
-            type = "CR2"
-        )
-
-        return(
-            expand_vcov(V)
-        )
-    }
-
-
-    ###### 7. Stata-style clustered covariance ####
+    ###### 6. Stata-style clustered covariance ####
 
     if (type == "stata") {
 
-        if (is.null(object$cluster)) {
+        if (is.null(reduced$cluster)) {
             stop(
                 "Stata-style clustered covariance requires a cluster variable.",
                 call. = FALSE
             )
         }
 
-        V <- sandwich::vcovCL(
+        V = sandwich::vcovCL(
             reduced,
             cluster = reduced$cluster,
             type = "HC1"
@@ -705,6 +758,103 @@ if (type == "classical") {
     stop(
         "Unknown covariance type.",
         call. = FALSE
+    )
+}
+
+.econ_lm_inference = function(object) {
+
+    ###### 0. Handle zero residual degrees of freedom ####
+
+    if (object$df.residual <= 0) {
+
+        estimate = stats::coef(object)
+
+        n = length(estimate)
+
+        return(data.frame(
+            term = names(estimate),
+            estimate = unname(estimate),
+            std.error = rep(NaN, n),
+            statistic = rep(NaN, n),
+            df = rep(object$df.residual, n),
+            p.value = rep(NaN, n),
+            row.names = NULL
+        ))
+    }
+
+    ###### 1. Extract coefficient estimates and standard errors ####
+
+    estimate = stats::coef(object)
+    se = sqrt(diag(stats::vcov(object)))
+    statistic = estimate / se
+
+    df = rep(
+        object$df.residual,
+        length(estimate)
+    )
+
+    names(df) = names(estimate)
+
+    ###### 2. Determine cluster-aware degrees of freedom ####
+
+    cr_types = c(
+        "CR0", "CR1", "CR1p",
+        "CR1S", "CR2", "CR3", "stata"
+    )
+
+    if (object$vcov_type %in% cr_types) {
+
+        G = length(unique(
+            object$cluster[object$weights > 0]
+        ))
+
+        df[] = G - 1
+
+        ###### CR2: Satterthwaite degrees of freedom ####
+
+        if (object$vcov_type == "CR2") {
+
+            reduced = object
+            reduced$x = object$x[
+                ,
+                object$estimable,
+                drop = FALSE
+            ]
+            reduced$coefficients = object$coefficients[
+                object$estimable
+            ]
+            reduced$estimable = seq_along(object$estimable)
+            reduced$aliased = integer(0)
+
+            tests = clubSandwich::coef_test(
+                reduced,
+                vcov = "CR2",
+                cluster = reduced$cluster,
+                test = "Satterthwaite"
+            )
+
+            df[as.character(tests$Coef)] = tests$df_Satt
+        }
+    }
+
+    ###### 3. Calculate p-values ####
+
+    p = 2 * stats::pt(
+        abs(statistic),
+        df = df,
+        lower.tail = FALSE
+    )
+
+    ###### 4. Return inference results ####
+
+    data.frame(
+        term = names(estimate),
+        estimate = unname(estimate),
+        std.error = unname(se),
+        statistic = unname(statistic),
+        df = unname(df),
+        p.value = unname(p),
+        row.names = NULL
     )
 }
 
@@ -871,6 +1021,7 @@ vcov.econ_lm <- function(
     object$vcov
 }
 
+
 #' @export
 confint.econ_lm <- function(
     object,
@@ -906,32 +1057,32 @@ confint.econ_lm <- function(
 
     ###### 3. Compute confidence level ####
 
-    alpha <- (
-        1 - level
-    ) / 2
+    alpha = (1 - level) / 2
 
-    probs <- c(
+    probs = c(
         alpha,
         1 - alpha
     )
 
-    critical <- stats::qt(
-        probs,
-        df = object$df.residual
+
+    ###### 4. Extract inference statistics ####
+
+    inference = .econ_lm_inference(object)
+
+    se = stats::setNames(
+        inference$std.error,
+        inference$term
+    )
+
+    df = stats::setNames(
+        inference$df,
+        inference$term
     )
 
 
-    ###### 4. Compute confidence intervals ####
+    ###### 5. Compute confidence intervals ####
 
-    se <- sqrt(
-        diag(
-            stats::vcov(
-                object
-            )
-        )
-    )
-
-    ci <- array(
+    ci = array(
         NA_real_,
         dim = c(
             length(parm),
@@ -949,9 +1100,21 @@ confint.econ_lm <- function(
         )
     )
 
-    ci[] <- cf[parm] +
-        se[parm] %o%
-        critical
+    critical = rep(NaN, length(parm))
+
+    valid = is.finite(df[parm]) &
+        df[parm] > 0
+
+    critical[valid] = stats::qt(
+        1 - alpha,
+        df = df[parm][valid]
+    )
+
+    ci[, 1L] = cf[parm] -
+        critical * se[parm]
+
+    ci[, 2L] = cf[parm] +
+        critical * se[parm]
 
 
     ###### 5. Return ####
@@ -1514,55 +1677,27 @@ summary.econ_lm = function(
     ...
 ) {
 
-    ###### 1. Extract estimates ####
+    ###### 1. Calculate coefficient inference ####
 
-    est <- object$coefficients
+    inference = .econ_lm_inference(object)
 
 
-    ###### 2. Compute inference statistics ####
+    ###### 2. Extract inference statistics ####
 
-    if (object$df.residual > 0) {
+    est = inference$estimate
+    se = inference$std.error
+    stat = inference$statistic
+    p = inference$p.value
 
-        se <- sqrt(
-            diag(
-                object$vcov
-            )
-        )
-
-        stat <- est / se
-
-        p <- 2 * stats::pt(
-            abs(stat),
-            df = object$df.residual,
-            lower.tail = FALSE
-        )
-
-    } else {
-
-        se <- rep(
-            NaN,
-            length(est)
-        )
-
-        stat <- rep(
-            NaN,
-            length(est)
-        )
-
-        p <- rep(
-            NaN,
-            length(est)
-        )
-
-        names(se) <- names(est)
-        names(stat) <- names(est)
-        names(p) <- names(est)
-    }
+    names(est) = inference$term
+    names(se) = inference$term
+    names(stat) = inference$term
+    names(p) = inference$term
 
 
     ###### 3. Construct coefficient table ####
 
-    z <- cbind(
+    z = cbind(
         Estimate = est,
         `Std. Error` = se,
         `t value` = stat,
@@ -1712,6 +1847,83 @@ summary.econ_lm = function(
         f_p_value <- NaN
     }
 
+        ###### 5A. CR2 joint Wald test with HTZ correction ####
+
+    if (
+        object$vcov_type == "CR2" &&
+        length(test_terms) > 0L
+    ) {
+
+        reduced = object
+
+        reduced$x = object$x[
+            ,
+            object$estimable,
+            drop = FALSE
+        ]
+
+        reduced$coefficients = object$coefficients[
+            object$estimable
+        ]
+
+        reduced$estimable = seq_along(object$estimable)
+        reduced$aliased = integer(0)
+
+        tested_names = names(reduced$coefficients)
+
+        tested_names = tested_names[
+            tested_names != "(Intercept)"
+        ]
+
+        if (length(tested_names) > 0L) {
+
+            wald_result = clubSandwich::Wald_test(
+                reduced,
+                constraints = clubSandwich::constrain_zero(
+                    tested_names
+                ),
+                vcov = "CR2",
+                cluster = reduced$cluster,
+                test = "HTZ"
+            )
+
+            f_statistic = wald_result$Fstat[1]
+            f_df1 = wald_result$df_num[1]
+            f_df2 = wald_result$df_denom[1]
+            f_p_value = wald_result$p_val[1]
+        }
+    }
+
+        ###### 5B. Other cluster-robust joint Wald tests ####
+
+    other_cr_types = c(
+        "CR0",
+        "CR1",
+        "CR1p",
+        "CR1S",
+        "CR3",
+        "stata"
+    )
+
+    if (
+        object$vcov_type %in% other_cr_types &&
+        length(test_terms) > 0L
+    ) {
+
+        G = length(unique(
+            object$cluster[object$weights > 0]
+        ))
+
+        f_df2 = G - 1
+
+        f_p_value = stats::pf(
+            f_statistic,
+            df1 = f_df1,
+            df2 = f_df2,
+            lower.tail = FALSE
+        )
+    }
+
 
     ###### 6. Construct summary object ####
 
@@ -1775,10 +1987,6 @@ print.summary.econ_lm <- function(
     coef_table <- x$coefficients
 
     ##### Significance symbols ####
-
-    p_values = coef_table[, "Pr(>|t|)"]
-
-        ##### Significance symbols ####
 
     p_values = coef_table[, "Pr(>|t|)"]
 
@@ -1967,23 +2175,23 @@ print.econ_lm <- function(
 #' @param ... additional arguments
 #'
 #' @export
-tidy.econ_lm <- function(
+tidy.econ_lm = function(
     x,
     conf.int = TRUE,
     conf.level = 0.95,
     ...
 ) {
 
-    ###### 1. Extract coefficient table ####
+    ###### 1. Extract coefficient inference ####
 
-    s <- summary(x)
+    inference = .econ_lm_inference(x)
 
-    out <- data.frame(
-        term = rownames(s$coefficients),
-        estimate = s$coefficients[, "Estimate"],
-        std.error = s$coefficients[, "Std. Error"],
-        statistic = s$coefficients[, "t value"],
-        p.value = s$coefficients[, "Pr(>|t|)"],
+    out = data.frame(
+        term = inference$term,
+        estimate = inference$estimate,
+        std.error = inference$std.error,
+        statistic = inference$statistic,
+        p.value = inference$p.value,
         row.names = NULL
     )
 
@@ -1992,30 +2200,23 @@ tidy.econ_lm <- function(
 
     if (conf.int) {
 
-        if (x$df.residual > 0) {
+        ci = stats::confint(
+            x,
+            parm = out$term,
+            level = conf.level
+        )
 
-            critical <- stats::qt(
-                1 - (1 - conf.level) / 2,
-                df = x$df.residual
-            )
-
-            out$conf.low <- out$estimate - critical * out$std.error
-            out$conf.high <- out$estimate + critical * out$std.error
-
-        } else {
-
-            out$conf.low <- NaN
-            out$conf.high <- NaN
-        }
+        out$conf.low = ci[, 1L]
+        out$conf.high = ci[, 2L]
     }
 
 
     ###### 3. Add model information ####
 
-    out$df <- x$df.residual
+    out$df = inference$df
 
-    out$outcome <- as.character(
-        formula(x)[[2]]
+    out$outcome = as.character(
+        stats::formula(x)[[2]]
     )
 
 

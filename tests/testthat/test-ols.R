@@ -4052,7 +4052,7 @@ test_that("single-cluster covariance estimation is rejected", {
             vcov = "CR2",
             cluster = cluster_id
         ),
-        "single cluster"
+        "at least two clusters"
     )
 })
 
@@ -4773,4 +4773,748 @@ test_that("HC1 summary joint test matches estimatr", {
             reference_summary$fstatistic[3]
         )
     )
+})
+
+
+###### 29. Cluster covariance matrices match clubSandwich ####
+
+test_that("CR covariance estimators match clubSandwich", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+
+    d$cluster_id = rep(
+        1:8,
+        length.out = nrow(d)
+    )
+
+    ###### 2. Reference model ####
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d
+    )
+
+    ###### 3. Compare covariance estimators ####
+
+    cr_types = c(
+        "CR0",
+        "CR1",
+        "CR1p",
+        "CR1S",
+        "CR2",
+        "CR3"
+    )
+
+    for (type in cr_types) {
+
+        model = econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = type,
+            cluster = cluster_id
+        )
+
+        expected = clubSandwich::vcovCR(
+            reference,
+            cluster = d$cluster_id,
+            type = type
+        )
+
+        actual = stats::vcov(model)
+
+        expect_equal(
+            unname(actual),
+            unname(as.matrix(expected)),
+            tolerance = 1e-8,
+            info = paste("Covariance type:", type)
+        )
+    }
+})
+
+
+#### 30. CR2 inference matches clubSandwich ####
+
+test_that("CR2 inference matches clubSandwich", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    ###### 2. Fit models ####
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        vcov = "CR2",
+        cluster = cluster_id
+    )
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d
+    )
+
+    ###### 3. Compare coefficient inference ####
+
+    expected = clubSandwich::coef_test(
+        reference,
+        vcov = "CR2",
+        cluster = d$cluster_id,
+        test = "Satterthwaite"
+    )
+
+    actual = EconR:::.econ_lm_inference(model)
+
+    expect_equal(
+        actual$std.error,
+        as.numeric(expected$SE),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        actual$df,
+        as.numeric(expected$df_Satt),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        actual$p.value,
+        as.numeric(expected$p_Satt),
+        tolerance = 1e-8
+    )
+
+
+    ###### 4. Compare joint Wald inference ####
+
+    expected_wald = clubSandwich::Wald_test(
+        reference,
+        constraints = clubSandwich::constrain_zero(
+            c("wt", "hp")
+        ),
+        vcov = "CR2",
+        cluster = d$cluster_id,
+        test = "HTZ"
+    )
+
+    actual_summary = summary(model)
+
+        expect_equal(
+        as.numeric(actual_summary$fstatistic),
+        as.numeric(expected_wald$Fstat),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        as.numeric(actual_summary$f.df1),
+        as.numeric(expected_wald$df_num),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        as.numeric(actual_summary$f.df2),
+        as.numeric(expected_wald$df_denom),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        as.numeric(actual_summary$f.p.value),
+        as.numeric(expected_wald$p_val),
+        tolerance = 1e-8
+    )
+
+
+    ###### 5. Compare confidence intervals ####
+
+    expected_ci = clubSandwich::conf_int(
+        reference,
+        vcov = "CR2",
+        cluster = d$cluster_id,
+        level = 0.95
+    )
+
+    actual_ci = stats::confint(model)
+
+    expect_equal(
+        unname(actual_ci[, 1]),
+        as.numeric(expected_ci$CI_L),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        unname(actual_ci[, 2]),
+        as.numeric(expected_ci$CI_U),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 31. Stata covariance matches estimatr ####
+
+test_that("Stata covariance and inference match estimatr", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    ###### 2. Fit models ####
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        vcov = "stata",
+        cluster = cluster_id
+    )
+
+    reference = estimatr::lm_robust(
+        mpg ~ wt + hp,
+        data = d,
+        clusters = cluster_id,
+        se_type = "stata"
+    )
+
+    ###### 3. Compare covariance matrices ####
+
+    expect_equal(
+        unname(stats::vcov(model)),
+        unname(stats::vcov(reference)),
+        tolerance = 1e-8
+    )
+
+
+    ###### 4. Compare coefficient inference ####
+
+    actual = EconR:::.econ_lm_inference(model)
+
+    expect_equal(
+        actual$estimate,
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        actual$std.error,
+        unname(reference$std.error),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        actual$p.value,
+        unname(reference$p.value),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 32. Conventional cluster inference ####
+
+test_that("conventional CR inference uses G minus 1 degrees of freedom", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    reference = stats::lm(mpg ~ wt + hp, data = d)
+
+    cr_types = c("CR0", "CR1", "CR1p", "CR1S", "CR3")
+
+    G = length(unique(d$cluster_id))
+
+    ###### 2. Compare inference ####
+
+    for (type in cr_types) {
+
+        model = econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = type,
+            cluster = cluster_id
+        )
+
+        expected_vcov = clubSandwich::vcovCR(
+            reference,
+            cluster = d$cluster_id,
+            type = type
+        )
+
+        expected_se = sqrt(diag(expected_vcov))
+
+        expected_t = stats::coef(reference) / expected_se
+
+        expected_p = 2 * stats::pt(
+            abs(expected_t),
+            df = G - 1,
+            lower.tail = FALSE
+        )
+
+        actual = EconR:::.econ_lm_inference(model)
+
+        expect_equal(
+            actual$df,
+            rep(G - 1, length(expected_p)),
+            info = type
+        )
+
+        expect_equal(
+            actual$p.value,
+            unname(expected_p),
+            tolerance = 1e-8,
+            info = type
+        )
+
+        expected_critical = stats::qt(0.975, df = G - 1)
+
+        expected_ci = cbind(
+            stats::coef(reference) - expected_critical * expected_se,
+            stats::coef(reference) + expected_critical * expected_se
+        )
+
+        expect_equal(
+            unname(stats::confint(model)),
+            unname(expected_ci),
+            tolerance = 1e-8,
+            info = type
+        )
+    }
+})
+
+
+#### 33. Conventional cluster joint Wald inference ####
+
+test_that("cluster joint Wald tests use G minus 1 degrees of freedom", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    reference = stats::lm(mpg ~ wt + hp, data = d)
+
+    cr_types = c("CR0", "CR1", "CR1p", "CR1S", "CR3", "stata")
+
+    G = length(unique(d$cluster_id))
+    restrictions = c("wt", "hp")
+
+    ###### 2. Compare joint inference ####
+
+    for (type in cr_types) {
+
+        model = econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = type,
+            cluster = cluster_id
+        )
+
+        V = if (type == "stata") {
+            sandwich::vcovCL(
+                reference,
+                cluster = d$cluster_id,
+                type = "HC1"
+            )
+        } else {
+            as.matrix(clubSandwich::vcovCR(
+                reference,
+                cluster = d$cluster_id,
+                type = type
+            ))
+        }
+
+        b = stats::coef(reference)[restrictions]
+        V_r = V[restrictions, restrictions, drop = FALSE]
+
+        q = length(restrictions)
+
+        expected_F = as.numeric(
+            crossprod(b, solve(V_r, b)) / q
+        )
+
+        expected_p = stats::pf(
+            expected_F,
+            df1 = q,
+            df2 = G - 1,
+            lower.tail = FALSE
+        )
+
+        actual = summary(model)
+
+        expect_equal(
+            as.numeric(actual$fstatistic),
+            expected_F,
+            tolerance = 1e-8,
+            info = type
+        )
+
+        expect_equal(
+            as.numeric(actual$f.df1),
+            q,
+            info = type
+        )
+
+        expect_equal(
+            as.numeric(actual$f.df2),
+            G - 1,
+            info = type
+        )
+
+        expect_equal(
+            as.numeric(actual$f.p.value),
+            expected_p,
+            tolerance = 1e-8,
+            info = type
+        )
+    }
+})
+
+
+#### 34. Missing cluster values ####
+
+test_that("missing cluster values are handled correctly", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    d$cluster_id[c(3, 10, 17)] = NA
+
+    ###### 2. Fit EconR model ####
+
+        expect_warning(
+        model <- econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = "CR2",
+            cluster = cluster_id
+        ),
+        "Some observations have missingness in the cluster variable"
+    )
+
+    ###### 3. Construct reference sample ####
+
+    d_complete = d[!is.na(d$cluster_id), , drop = FALSE]
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d_complete
+    )
+
+    expected_vcov = clubSandwich::vcovCR(
+        reference,
+        cluster = d_complete$cluster_id,
+        type = "CR2"
+    )
+
+    ###### 4. Compare results ####
+
+    expect_equal(
+        stats::nobs(model),
+        nrow(d_complete)
+    )
+
+    expect_equal(
+        unname(stats::coef(model)),
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        unname(stats::vcov(model)),
+        unname(as.matrix(expected_vcov)),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 35. Cluster alignment with subset ####
+
+test_that("cluster identifiers align correctly after subsetting", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+
+    ###### 2. Fit EconR model with subset ####
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        subset = cyl != 4,
+        vcov = "CR2",
+        cluster = cluster_id
+    )
+
+    ###### 3. Construct reference sample ####
+
+    d_subset = d[d$cyl != 4, , drop = FALSE]
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d_subset
+    )
+
+    expected_vcov = clubSandwich::vcovCR(
+        reference,
+        cluster = d_subset$cluster_id,
+        type = "CR2"
+    )
+
+    ###### 4. Compare results ####
+
+    expect_equal(
+        stats::nobs(model),
+        nrow(d_subset)
+    )
+
+    expect_equal(
+        unname(stats::coef(model)),
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        unname(stats::vcov(model)),
+        unname(as.matrix(expected_vcov)),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 36. Weighted CR2 estimation ####
+
+test_that("weighted CR2 covariance matches clubSandwich", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+    d$weighting = d$disp / mean(d$disp)
+
+    ###### 2. Fit EconR model ####
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = weighting,
+        vcov = "CR2",
+        cluster = cluster_id
+    )
+
+    ###### 3. Fit reference model ####
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = weighting
+    )
+
+    expected_vcov = clubSandwich::vcovCR(
+        reference,
+        cluster = d$cluster_id,
+        type = "CR2"
+    )
+
+    ###### 4. Compare results ####
+
+    expect_equal(
+        unname(stats::coef(model)),
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        unname(stats::vcov(model)),
+        unname(as.matrix(expected_vcov)),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 37. Zero weights with CR2 ####
+
+test_that("zero weights are handled correctly with CR2", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+    d$weighting = rep(1, nrow(d))
+
+    d$weighting[c(3, 10, 17)] = 0
+
+    ###### 2. Fit EconR model ####
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = weighting,
+        vcov = "CR2",
+        cluster = cluster_id
+    )
+
+    ###### 3. Construct reference model ####
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d,
+        weights = weighting
+    )
+
+    expected_vcov = clubSandwich::vcovCR(
+        reference,
+        cluster = d$cluster_id,
+        type = "CR2"
+    )
+
+    ###### 4. Compare results ####
+
+    expect_equal(
+        unname(stats::coef(model)),
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    expect_equal(
+        unname(stats::vcov(model)),
+        unname(as.matrix(expected_vcov)),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 38. Insufficient clusters ####
+
+test_that("CR2 rejects a single cluster", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1, nrow(d))
+
+    ###### 2. Check validation ####
+
+    expect_error(
+        econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = "CR2",
+            cluster = cluster_id
+        ),
+        "at least two clusters"
+    )
+})
+
+
+#### 39. Rank-deficient CR2 models ####
+
+test_that("CR2 handles rank-deficient models consistently", {
+
+    ###### 1. Prepare data ####
+
+    d = mtcars
+    d$cluster_id = rep(1:8, length.out = nrow(d))
+    d$wt_duplicate = 2 * d$wt
+
+    ###### 2. Fit EconR model ####
+
+    model = econ_lm(
+        mpg ~ wt + wt_duplicate + hp,
+        data = d,
+        vcov = "CR2",
+        cluster = cluster_id
+    )
+
+    ###### 3. Fit reference model ####
+
+    reference = stats::lm(
+        mpg ~ wt + wt_duplicate + hp,
+        data = d
+    )
+
+    ###### 4. Compare estimable coefficients ####
+
+    expect_equal(
+        unname(stats::coef(model)),
+        unname(stats::coef(reference)),
+        tolerance = 1e-8
+    )
+
+    ###### 5. Check covariance matrix ####
+
+    V = stats::vcov(model)
+
+    expect_true(is.matrix(V))
+    expect_equal(nrow(V), length(stats::coef(model)))
+    expect_equal(ncol(V), length(stats::coef(model)))
+
+        ###### 6. Compare estimable covariance matrix ####
+
+    expected_vcov = clubSandwich::vcovCR(
+        reference,
+        cluster = d$cluster_id,
+        type = "CR2"
+    )
+
+    estimable = !is.na(stats::coef(reference))
+
+    expect_equal(
+        unname(V[estimable, estimable, drop = FALSE]),
+        unname(as.matrix(expected_vcov)),
+        tolerance = 1e-8
+    )
+})
+
+
+#### 40. HC4, HC4m, and HC5 covariance estimators ####
+
+test_that("HC4, HC4m, and HC5 match sandwich", {
+
+    d = mtcars
+
+    reference = stats::lm(
+        mpg ~ wt + hp,
+        data = d
+    )
+
+    for (type in c("HC4", "HC4m", "HC5")) {
+
+        model = econ_lm(
+            mpg ~ wt + hp,
+            data = d,
+            vcov = type
+        )
+
+        expected = sandwich::vcovHC(
+            reference,
+            type = type
+        )
+
+        expect_equal(
+            unname(stats::coef(model)),
+            unname(stats::coef(reference)),
+            tolerance = 1e-8
+        )
+
+        expect_equal(
+            unname(stats::vcov(model)),
+            unname(expected),
+            tolerance = 1e-8
+        )
+
+        expect_equal(
+            unname(sqrt(diag(stats::vcov(model)))),
+            unname(sqrt(diag(expected))),
+            tolerance = 1e-8
+        )
+
+        expect_identical(
+            model$vcov_type,
+            type
+        )
+    }
 })

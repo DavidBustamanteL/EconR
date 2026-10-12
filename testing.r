@@ -6460,8 +6460,283 @@ anova(
 )
 
 
+#### 29. Test cluster-robust covariance estimators ####
+
+df = mtcars
+df$cluster_id = rep(1:8, length.out = nrow(df))
+
+cr_types = c(
+    "CR0",
+    "CR1",
+    "CR1p",
+    "CR1S",
+    "CR2",
+    "CR3",
+    "stata"
+)
+
+results = lapply(cr_types, function(type) {
+
+    model = econ_lm(
+        mpg ~ wt + hp,
+        data = df,
+        vcov = type,
+        cluster = cluster_id
+    )
+
+    c(
+        type = type,
+        se_wt = sqrt(vcov(model)["wt", "wt"])
+    )
+})
+
+do.call(rbind, results)
 
 
+#### FINAL TEST ####
+###### 1. Load packages ####
+
+devtools::load_all()
+
+library(sandwich)
+library(estimatr)
+library(dplyr)
+
+###### 2. Prepare data ####
+
+d = mtcars
+
+d$cyl_f = factor(d$cyl)
+d$weighting = d$disp / mean(d$disp)
+
+d_na = d
+d_na$wt[c(3, 10)] = NA
+d_na$hp[5] = NA
+d_na$weighting[7] = NA
+
+###### 3. Define model specifications ####
+
+specs = list(
+    "Simple OLS" = list(
+        formula = mpg ~ wt,
+        data = d,
+        weighted = FALSE
+    ),
+    "Multiple regression" = list(
+        formula = mpg ~ wt + hp,
+        data = d,
+        weighted = FALSE
+    ),
+    "Interactions" = list(
+        formula = mpg ~ wt * hp,
+        data = d,
+        weighted = FALSE
+    ),
+    "Categorical regressors" = list(
+        formula = mpg ~ wt + cyl_f,
+        data = d,
+        weighted = FALSE
+    ),
+    "Polynomial" = list(
+        formula = mpg ~ wt + I(wt^2) + hp,
+        data = d,
+        weighted = FALSE
+    ),
+    "Weighted regression" = list(
+        formula = mpg ~ wt + hp,
+        data = d,
+        weighted = TRUE
+    ),
+    "Missing observations" = list(
+        formula = mpg ~ wt + hp,
+        data = d_na,
+        weighted = TRUE
+    )
+)
+
+###### 4. Compare all HC estimators ####
+
+results = list()
+
+for (spec_name in names(specs)) {
+
+    spec = specs[[spec_name]]
+
+    for (hc in c(
+        "HC0", "HC1", "HC2", "HC3",
+        "HC4", "HC4m", "HC5"
+    )) {
+
+        if (spec$weighted) {
+
+            econ = econ_lm(
+                spec$formula,
+                data = spec$data,
+                weights = weighting,
+                vcov = hc
+            )
+
+            base = stats::lm(
+                spec$formula,
+                data = spec$data,
+                weights = weighting
+            )
+
+        } else {
+
+            econ = econ_lm(
+                spec$formula,
+                data = spec$data,
+                vcov = hc
+            )
+
+            base = stats::lm(
+                spec$formula,
+                data = spec$data
+            )
+        }
+
+        V_base = sandwich::vcovHC(
+            base,
+            type = hc
+        )
+
+        coef_diff = max(
+            abs(
+                unname(stats::coef(econ)) -
+                unname(stats::coef(base))
+            )
+        )
+
+        vcov_diff = max(
+            abs(
+                unname(stats::vcov(econ)) -
+                unname(V_base)
+            )
+        )
+
+        se_diff = max(
+            abs(
+                unname(sqrt(diag(stats::vcov(econ)))) -
+                unname(sqrt(diag(V_base)))
+            )
+        )
+
+        estimatr_se_diff = NA_real_
+
+        if (hc %in% c("HC0", "HC1", "HC2", "HC3")) {
+
+            se_type = if (hc == "HC0") "HC0" else hc
+
+            if (spec$weighted) {
+
+                est = estimatr::lm_robust(
+                    spec$formula,
+                    data = spec$data,
+                    weights = weighting,
+                    se_type = se_type
+                )
+
+            } else {
+
+                est = estimatr::lm_robust(
+                    spec$formula,
+                    data = spec$data,
+                    se_type = se_type
+                )
+            }
+
+            estimatr_se_diff = max(
+                abs(
+                    unname(sqrt(diag(stats::vcov(econ)))) -
+                    unname(est$std.error)
+                )
+            )
+        }
+
+        results[[length(results) + 1L]] = data.frame(
+            specification = spec_name,
+            estimator = hc,
+            coef_diff = coef_diff,
+            vcov_diff = vcov_diff,
+            se_diff = se_diff,
+            estimatr_se_diff = estimatr_se_diff
+        )
+    }
+}
+
+###### 5. Construct comparison table ####
+
+comparison = dplyr::bind_rows(results)
+
+print(
+    comparison,
+    row.names = FALSE
+)
+
+###### 6. Overall validation ####
+
+tolerance = 1e-8
+
+cat("\n--- VALIDATION RESULTS ---\n")
+
+cat(
+    "Number of comparisons:",
+    nrow(comparison),
+    "\n"
+)
+
+cat(
+    "Maximum coefficient difference:",
+    max(comparison$coef_diff),
+    "\n"
+)
+
+cat(
+    "Maximum covariance difference:",
+    max(comparison$vcov_diff),
+    "\n"
+)
+
+cat(
+    "Maximum standard error difference:",
+    max(comparison$se_diff),
+    "\n"
+)
+
+cat(
+    "Maximum estimatr SE difference:",
+    max(comparison$estimatr_se_diff, na.rm = TRUE),
+    "\n"
+)
+
+cat(
+    "\nALL COEFFICIENTS MATCH:",
+    all(comparison$coef_diff < tolerance),
+    "\n"
+)
+
+cat(
+    "ALL COVARIANCE MATRICES MATCH:",
+    all(comparison$vcov_diff < tolerance),
+    "\n"
+)
+
+cat(
+    "ALL STANDARD ERRORS MATCH:",
+    all(comparison$se_diff < tolerance),
+    "\n"
+)
+
+cat(
+    "ALL ESTIMATR STANDARD ERRORS MATCH:",
+    all(
+        comparison$estimatr_se_diff[
+            !is.na(comparison$estimatr_se_diff)
+        ] < tolerance
+    ),
+    "\n"
+)
 
 
 
