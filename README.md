@@ -496,7 +496,7 @@ The automated test suite currently contains:
 | Linear models (OLS/WLS) | 490 |
 | Binary models (Logit/Probit) | 412 |
 | Ordered models (Logit/Probit) | 155 |
-| **Total** | **864** |
+| **Total** | **1057** |
 
 The complete test suite passes:
 
