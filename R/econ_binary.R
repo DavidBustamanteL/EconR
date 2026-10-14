@@ -11,16 +11,16 @@
 #' @param na.action Function determining how missing values are handled.
 #' @param link Binary-response link function. Either "logit" or "probit".
 #' @param vcov Covariance estimator. Available options are "classical",
-#'   "HC0", "HC1", "HC2", "HC3", "CR0", "CR2", and "stata".
+#'   "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+#'   "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", and "stata".
 #' @param cluster Optional clustering variable, evaluated within data.
-#'   Required when vcov is "CR0", "CR2", or "stata".
+#'   Required for CR0, CR1, CR1p, CR1S, CR2, CR3, and stata.
 #'
 #' @return An object of class "econ_binary".
 #'
 #' @export
-#' 
-#' 
-econ_binary <- function(
+#'
+econ_binary = function(
     formula,
     data,
     weights = NULL,
@@ -28,41 +28,31 @@ econ_binary <- function(
     na.action = stats::na.omit,
     link = c("logit", "probit"),
     vcov = c(
-        "classical", "HC0", "HC1", "HC2", "HC3",
-        "CR0", "CR2", "stata"
+        "classical",
+        "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3",
+        "stata"
     ),
     cluster = NULL
 ) {
 
-    ###### 1. Validate link ####
+    ###### 1. Validate link and covariance ####
 
     link = match.arg(link)
-
     vcov = match.arg(vcov)
 
 
     ###### 2. Capture expressions ####
 
-    weights_expr <- substitute(
-        weights
-    )
+    weights_expr = substitute(weights)
+    subset_expr = substitute(subset)
 
-    subset_expr <- substitute(
-        subset
-    )
-
-    if (identical(
-        weights_expr,
-        quote(NULL)
-    )) {
-        weights_expr <- NULL
+    if (identical(weights_expr, quote(NULL))) {
+        weights_expr = NULL
     }
 
-    if (identical(
-        subset_expr,
-        quote(NULL)
-    )) {
-        subset_expr <- NULL
+    if (identical(subset_expr, quote(NULL))) {
+        subset_expr = NULL
     }
 
     cluster_expr = substitute(cluster)
@@ -74,7 +64,7 @@ econ_binary <- function(
 
     ###### 3. Construct estimation sample ####
 
-    mf0 <- .econ_model_frame(
+    mf0 = .econ_model_frame(
         formula = formula,
         data = data,
         weights_expr = weights_expr,
@@ -84,7 +74,7 @@ econ_binary <- function(
         enclos = parent.frame()
     )
 
-    mf <- mf0$frame
+    mf = mf0$frame
 
     if (nrow(mf) == 0L) {
         stop(
@@ -96,21 +86,13 @@ econ_binary <- function(
 
     ###### 4. Extract model components ####
 
-    mt <- attr(
-        mf,
-        "terms"
-    )
+    mt = attr(mf, "terms")
 
-    y <- stats::model.response(
-        mf
-    )
+    y = stats::model.response(mf)
 
-    X <- stats::model.matrix(
-        mt,
-        mf
-    )
+    X = stats::model.matrix(mt, mf)
 
-    w <- mf0$weights
+    w = mf0$weights
 
 
     ###### 5. Validate response ####
@@ -137,9 +119,44 @@ econ_binary <- function(
     }
 
 
-    ###### 6. Estimate model ####
+    ###### 6. Validate clustered covariance ####
 
-    fit <- stats::glm.fit(
+    clustered_types = c(
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+    )
+
+    if (vcov %in% clustered_types) {
+
+        if (is.null(mf0$cluster)) {
+            stop(
+                "'", vcov,
+                "' covariance estimation requires a cluster variable.",
+                call. = FALSE
+            )
+        }
+
+        if (anyNA(mf0$cluster)) {
+            stop(
+                "'cluster' must not contain missing values.",
+                call. = FALSE
+            )
+        }
+
+        G = length(unique(mf0$cluster))
+
+        if (G < 2L) {
+            stop(
+                "'", vcov,
+                "' covariance estimation requires at least two distinct clusters.",
+                call. = FALSE
+            )
+        }
+    }
+
+
+    ###### 7. Estimate model ####
+
+    fit = stats::glm.fit(
         x = X,
         y = y,
         weights = w,
@@ -149,9 +166,9 @@ econ_binary <- function(
     )
 
 
-    ###### 7. Construct model object ####
+    ###### 8. Construct model object ####
 
-    ans <- list(
+    ans = list(
         call = match.call(),
         formula = formula,
         terms = mt,
@@ -181,7 +198,7 @@ econ_binary <- function(
         xlevels = stats::.getXlevels(mt, mf)
     )
 
-    class(ans) <- "econ_binary"
+    class(ans) = "econ_binary"
 
     ans
 }
@@ -237,16 +254,21 @@ vcov.econ_binary <- function(
     ###### 1. Validate covariance type ####
 
     type = match.arg(
-        type,
-        c(
-            "classical", "HC0", "HC1", "HC2", "HC3",
-            "CR0", "CR2", "stata"
-        )
+    type,
+    c(
+        "classical",
+        "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3",
+        "stata"
     )
+)
 
     ###### 2. Heteroskedasticity-Robust Covariance ####
 
-    if (type %in% c("HC0", "HC1", "HC2", "HC3")) {
+    if (type %in% c(
+        "HC0", "HC1", "HC2", "HC3",
+        "HC4", "HC4m", "HC5"
+    )) {
 
         return(
             sandwich::vcovHC(
@@ -278,14 +300,13 @@ vcov.econ_binary <- function(
         )
     }
 
+###### 4. ClubSandwich Clustered Covariance ####
 
-###### 4. CR2 Clustered Covariance ####
-
-if (type == "CR2") {
+if (type %in% c("CR1", "CR1p", "CR1S", "CR2", "CR3")) {
 
     if (is.null(object$cluster)) {
         stop(
-            "CR2 clustered covariance requires a cluster variable.",
+            paste0(type, " clustered covariance requires a cluster variable."),
             call. = FALSE
         )
     }
@@ -305,7 +326,7 @@ if (type == "CR2") {
             clubSandwich::vcovCR(
                 glm_ref,
                 cluster = object$cluster,
-                type = "CR2"
+                type = type
             )
         )
     )
@@ -372,41 +393,42 @@ summary.econ_binary = function(
     ...
 ) {
 
-    ###### 1. Extract coefficients ####
+    ###### 1. Compute coefficient inference ####
 
-    estimate = stats::coef(
-        object
-    )
+inference = .econ_binary_inference(object)
 
-    std_error = sqrt(
-        diag(
-            stats::vcov(object)
-        )
-    )
+###### 2. Construct coefficient table ####
 
-    ###### 2. Compute coefficient inference ####
+clustered = object$vcov_type %in% c(
+    "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+)
 
-    z_value = estimate / std_error
-
-    p_value = 2 * stats::pnorm(
-        abs(z_value),
-        lower.tail = FALSE
-    )
-
-    ###### 3. Construct coefficient table ####
+if (clustered) {
 
     coef_table = cbind(
-        Estimate = estimate,
-        "Std. Error" = std_error,
-        "z value" = z_value,
-        "Pr(>|z|)" = p_value
+        Estimate = inference$estimate,
+        "Std. Error" = inference$std.error,
+        "t value" = inference$statistic,
+        "Pr(>|t|)" = inference$p.value
     )
 
-    ###### 4. Construct summary object ####
+} else {
+
+    coef_table = cbind(
+        Estimate = inference$estimate,
+        "Std. Error" = inference$std.error,
+        "z value" = inference$statistic,
+        "Pr(>|z|)" = inference$p.value
+    )
+}
+
+
+    ###### 3. Construct summary object ####
 
     ans = list(
         call = object$call,
         coefficients = coef_table,
+        df = inference$df,
         link = object$link,
         deviance = object$deviance,
         null.deviance = object$null.deviance,
@@ -421,8 +443,79 @@ summary.econ_binary = function(
     ans
 }
 
+#### 4.a Binary Coefficient Inference ####
 
-###### 5. Print Binary Model Summary ####
+.econ_binary_inference = function(object) {
+
+    ###### 1. Extract estimates and covariance ####
+
+    estimate = stats::coef(object)
+
+    V = stats::vcov(object)
+
+    std_error = sqrt(diag(V))
+
+    statistic = estimate / std_error
+
+    type = object$vcov_type
+
+    ###### 2. Determine reference distribution ####
+
+    if (type %in% c(
+        "CR0", "CR1", "CR1p", "CR1S", "CR3", "stata"
+    )) {
+
+        G = length(unique(object$cluster))
+
+        df = rep(G - 1, length(estimate))
+
+    } else if (type == "CR2") {
+
+        glm_data = object$model
+        glm_data$.econ_prior_weights = object$weights
+
+        glm_ref = stats::glm(
+            formula = object$formula,
+            data = glm_data,
+            weights = .econ_prior_weights,
+            family = object$family
+        )
+
+        cr2_test = clubSandwich::coef_test(
+            glm_ref,
+            vcov = "CR2",
+            cluster = object$cluster,
+            test = "Satterthwaite"
+        )
+
+        df = cr2_test$df_Satt
+
+    } else {
+
+        df = rep(Inf, length(estimate))
+    }
+
+    ###### 3. Compute p-values ####
+
+    p_value = ifelse(
+        is.infinite(df),
+        2 * stats::pnorm(abs(statistic), lower.tail = FALSE),
+        2 * stats::pt(abs(statistic), df = df, lower.tail = FALSE)
+    )
+
+    ###### 4. Return inference components ####
+
+    list(
+        estimate = estimate,
+        std.error = std_error,
+        statistic = statistic,
+        p.value = p_value,
+        df = df
+    )
+}
+
+
+#### 5. Print Binary Model Summary ####
 
 #' @export
 print.summary.econ_binary = function(
@@ -455,7 +548,7 @@ print.summary.econ_binary = function(
 
     ##### Significance symbols ####
 
-    p_values = coef_table[, "Pr(>|z|)"]
+    p_values = coef_table[, ncol(coef_table)]
 
     if (isTRUE(x$extra.significance)) {
 
@@ -822,8 +915,11 @@ tidy.econ_binary <- function(
             )
         }
 
-        critical = stats::qnorm(
-            1 - (1 - conf.level) / 2
+        ###### Compute distribution-specific critical values ####
+
+        critical = stats::qt(
+            1 - (1 - conf.level) / 2,
+            df = s$df
         )
 
         out$conf.low = out$estimate - critical * out$std.error
@@ -833,7 +929,7 @@ tidy.econ_binary <- function(
 
     ###### 3. Add model information ####
 
-    out$df = x$df.residual
+    out$df = s$df
 
     out$outcome = as.character(
         x$formula[[2]]
@@ -899,13 +995,22 @@ glance.econ_binary <- function(
 #' @export
 confint.econ_binary = function(object, parm, level = 0.95, ...) {
 
+    ###### 1. Validate confidence level ####
+
     if (!is.numeric(level) || length(level) != 1L ||
         is.na(level) || level <= 0 || level >= 1) {
         stop("'level' must be a single number between 0 and 1.")
     }
 
-    b = coef(object)
-    se = sqrt(diag(vcov(object, ...)))
+    ###### 2. Extract coefficient inference ####
+
+    inference = .econ_binary_inference(object)
+
+    b = inference$estimate
+    se = inference$std.error
+    df = inference$df
+
+    ###### 3. Select coefficients ####
 
     if (missing(parm)) {
         parm = seq_along(b)
@@ -919,15 +1024,23 @@ confint.econ_binary = function(object, parm, level = 0.95, ...) {
         }
     }
 
-    if (anyNA(parm) || any(parm < 1 | parm > length(b))) {
+    if (!is.numeric(parm) ||
+        anyNA(parm) ||
+        any(parm < 1 | parm > length(b)) ||
+        any(parm != as.integer(parm))) {
         stop("Invalid coefficient selection in 'parm'.")
     }
 
-    z = stats::qnorm((1 + level) / 2)
+    ###### 4. Compute confidence intervals ####
+
+    critical = stats::qt(
+        (1 + level) / 2,
+        df = df[parm]
+    )
 
     ci = cbind(
-        b[parm] - z * se[parm],
-        b[parm] + z * se[parm]
+        b[parm] - critical * se[parm],
+        b[parm] + critical * se[parm]
     )
 
     colnames(ci) = c(
@@ -937,7 +1050,6 @@ confint.econ_binary = function(object, parm, level = 0.95, ...) {
 
     ci
 }
-
 
 ###### Fitted Values ####
 

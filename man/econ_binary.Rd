@@ -11,7 +11,8 @@ econ_binary(
   subset = NULL,
   na.action = stats::na.omit,
   link = c("logit", "probit"),
-  vcov = c("classical", "HC0", "HC1", "HC2", "HC3", "CR0", "CR2", "stata"),
+  vcov = c("classical", "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5", "CR0", "CR1",
+    "CR1p", "CR1S", "CR2", "CR3", "stata"),
   cluster = NULL
 )
 }
@@ -29,10 +30,11 @@ econ_binary(
 \item{link}{Binary-response link function. Either "logit" or "probit".}
 
 \item{vcov}{Covariance estimator. Available options are "classical",
-"HC0", "HC1", "HC2", "HC3", "CR0", "CR2", and "stata".}
+"HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+"CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", and "stata".}
 
 \item{cluster}{Optional clustering variable, evaluated within data.
-Required when vcov is "CR0", "CR2", or "stata".}
+Required for CR0, CR1, CR1p, CR1S, CR2, CR3, and stata.}
 }
 \value{
 An object of class "econ_binary".

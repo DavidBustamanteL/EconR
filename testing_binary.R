@@ -1280,7 +1280,7 @@ modelsummary::modelsummary(
 )
 
 
-#### NAs ####
+#### 42. NAs ####
 set.seed(123)
 
 n = 1000
@@ -1353,7 +1353,7 @@ cat("glm:  ", n - nobs(ref), "\n")
 cat("EconR:", n - nobs(econ), "\n")
 
 
-#### Logit Missing Weights Validation ####
+#### 43. Logit Missing Weights Validation ####
 
 set.seed(456)
 
@@ -1407,7 +1407,7 @@ print(all.equal(
 ))
 
 
-#### Logit Cluster Missingness ####
+#### 44. Logit Cluster Missingness ####
 
 set.seed(789)
 
@@ -1441,7 +1441,7 @@ cat("\nNo cluster NA remains in estimation sample:\n")
 print(all(!is.na(df$cluster_id[econ_cl$used])))
 
 
-#### Probit Missing-Data Validation ####
+#### 45. Probit Missing-Data Validation ####
 
 ref = glm(
     y ~ x1 + x2 + x3,
@@ -1472,7 +1472,436 @@ print(identical(
 ))
 
 
+#### 46. Test additional HC estimators for GLMs ####
 
+d = mtcars
+d$automatic = as.integer(d$am == 0)
+
+for (link in c("logit", "probit")) {
+
+    reference = stats::glm(
+        automatic ~ wt + hp,
+        data = d,
+        family = stats::binomial(link = link)
+    )
+
+    for (type in c("HC4", "HC4m", "HC5")) {
+
+        result = tryCatch(
+            sandwich::vcovHC(reference, type = type),
+            error = function(e) e
+        )
+
+        cat("\nLink:", link, "| Estimator:", type, "\n")
+
+        if (inherits(result, "error")) {
+            cat("ERROR:", conditionMessage(result), "\n")
+        } else {
+            cat("SUCCESS:", all(is.finite(result)), "\n")
+            print(sqrt(diag(result)))
+        }
+    }
+}
+
+
+#### 47. Validate binary HC covariance estimators ####
+
+set.seed(123)
+
+n = 1000
+
+df = data.frame(
+    x1 = rnorm(n),
+    x2 = rnorm(n),
+    x3 = rbinom(n, 1, 0.5)
+)
+
+eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 + 0.6 * df$x3
+
+df$y = rbinom(n, 1, plogis(eta))
+
+results = data.frame()
+
+for (link in c("logit", "probit")) {
+
+    for (type in c("HC4", "HC4m", "HC5")) {
+
+        model_econ = econ_binary(
+            y ~ x1 + x2 + x3,
+            data = df,
+            link = link,
+            vcov = type
+        )
+
+        model_ref = glm(
+            y ~ x1 + x2 + x3,
+            data = df,
+            family = binomial(link = link)
+        )
+
+        V_econ = vcov(model_econ)
+        V_ref = sandwich::vcovHC(model_ref, type = type)
+
+        results = rbind(
+            results,
+            data.frame(
+                link = link,
+                vcov = type,
+                coef_equal = isTRUE(all.equal(
+                    unname(coef(model_econ)),
+                    unname(coef(model_ref)),
+                    tolerance = 1e-8
+                )),
+                vcov_equal = isTRUE(all.equal(
+                    unname(V_econ),
+                    unname(V_ref),
+                    tolerance = 1e-8
+                )),
+                max_vcov_diff = max(abs(V_econ - V_ref))
+            )
+        )
+    }
+}
+
+print(results, row.names = FALSE)
+
+stopifnot(
+    all(results$coef_equal),
+    all(results$vcov_equal)
+)
+
+
+#### 48. Test additional CR estimators for GLMs ####
+
+library(clubSandwich)
+
+set.seed(123)
+
+n = 1000
+
+df = data.frame(
+    cluster = rep(1:50, each = 20),
+    x1 = rnorm(n),
+    x2 = rnorm(n)
+)
+
+cluster_effect = rnorm(50, sd = 0.5)
+
+eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 +
+    cluster_effect[df$cluster]
+
+df$y = rbinom(n, 1, plogis(eta))
+
+results = data.frame()
+
+for (link in c("logit", "probit")) {
+
+    reference = stats::glm(
+        y ~ x1 + x2,
+        data = df,
+        family = stats::binomial(link = link)
+    )
+
+    for (type in c("CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3")) {
+
+        result = tryCatch(
+            clubSandwich::vcovCR(
+                reference,
+                cluster = df$cluster,
+                type = type
+            ),
+            error = function(e) e
+        )
+
+        results = rbind(
+            results,
+            data.frame(
+                link = link,
+                vcov = type,
+                supported = !inherits(result, "error"),
+                message = if (inherits(result, "error")) {
+                    conditionMessage(result)
+                } else {
+                    "OK"
+                }
+            )
+        )
+    }
+}
+
+print(results, row.names = FALSE)
+
+
+#### 49. Validate binary CR covariance estimators ####
+set.seed(123)
+
+n = 1000
+
+df = data.frame(
+    cluster = rep(1:50, each = 20),
+    x1 = rnorm(n),
+    x2 = rnorm(n)
+)
+
+cluster_effect = rnorm(50, sd = 0.5)
+
+eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 +
+    cluster_effect[df$cluster]
+
+df$y = rbinom(n, 1, plogis(eta))
+
+results = data.frame()
+
+for (link in c("logit", "probit")) {
+
+    reference = stats::glm(
+        y ~ x1 + x2,
+        data = df,
+        family = stats::binomial(link = link)
+    )
+
+    for (type in c("CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3")) {
+
+        model = econ_binary(
+            y ~ x1 + x2,
+            data = df,
+            link = link,
+            vcov = type,
+            cluster = cluster
+        )
+
+        V_econ = vcov(model)
+
+        V_ref = if (type == "CR0") {
+            sandwich::vcovCL(
+                reference,
+                cluster = df$cluster,
+                type = "HC",
+                cadjust = FALSE
+            )
+        } else {
+            as.matrix(
+                clubSandwich::vcovCR(
+                    reference,
+                    cluster = df$cluster,
+                    type = type
+                )
+            )
+        }
+
+        results = rbind(
+            results,
+            data.frame(
+                link = link,
+                vcov = type,
+                coef_equal = isTRUE(all.equal(
+                    unname(coef(model)),
+                    unname(coef(reference)),
+                    tolerance = 1e-8
+                )),
+                vcov_equal = isTRUE(all.equal(
+                    unname(V_econ),
+                    unname(V_ref),
+                    tolerance = 1e-8
+                )),
+                max_vcov_diff = max(abs(V_econ - V_ref))
+            )
+        )
+    }
+}
+
+print(results, row.names = FALSE)
+
+stopifnot(
+    all(results$coef_equal),
+    all(results$vcov_equal)
+)
+
+
+#### 50. Validate CR2 Satterthwaite inference ####
+
+for (link in c("logit", "probit")) {
+
+    reference = stats::glm(
+        y ~ x1 + x2,
+        data = df,
+        family = stats::binomial(link = link)
+    )
+
+    result = clubSandwich::coef_test(
+        reference,
+        vcov = "CR2",
+        cluster = df$cluster,
+        test = "Satterthwaite"
+    )
+
+    cat("\nLink:", link, "\n")
+    print(result)
+}
+
+
+#### 51. Validate binary CR2 coefficient inference ####
+
+results = data.frame()
+
+for (link in c("logit", "probit")) {
+
+    model = econ_binary(
+        y ~ x1 + x2,
+        data = df,
+        link = link,
+        vcov = "CR2",
+        cluster = cluster
+    )
+
+    reference = stats::glm(
+        y ~ x1 + x2,
+        data = df,
+        family = stats::binomial(link = link)
+    )
+
+    econ_result = EconR:::.econ_binary_inference(model)
+
+    ref_result = clubSandwich::coef_test(
+        reference,
+        vcov = "CR2",
+        cluster = df$cluster,
+        test = "Satterthwaite"
+    )
+
+    results = rbind(
+        results,
+        data.frame(
+            link = link,
+            coef = names(econ_result$estimate),
+            se_equal = isTRUE(all.equal(
+                unname(econ_result$std.error),
+                unname(ref_result$SE),
+                tolerance = 1e-8
+            )),
+            df_equal = isTRUE(all.equal(
+                unname(econ_result$df),
+                unname(ref_result$df_Satt),
+                tolerance = 1e-8
+            )),
+            p_equal = isTRUE(all.equal(
+                unname(econ_result$p.value),
+                unname(ref_result$p_Satt),
+                tolerance = 1e-8
+            ))
+        )
+    )
+}
+
+print(results, row.names = FALSE)
+
+stopifnot(
+    all(results$se_equal),
+    all(results$df_equal),
+    all(results$p_equal)
+)
+
+
+#### 52. Validate binary inference conventions ####
+
+results = data.frame()
+
+for (link in c("logit", "probit")) {
+
+    for (type in c(
+        "classical",
+        "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+    )) {
+
+        clustered = type %in% c(
+            "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+        )
+
+if (clustered) {
+
+    model = econ_binary(
+        y ~ x1 + x2,
+        data = df,
+        link = link,
+        vcov = type,
+        cluster = cluster
+    )
+
+} else {
+
+    model = econ_binary(
+        y ~ x1 + x2,
+        data = df,
+        link = link,
+        vcov = type
+    )
+}
+
+        inference = EconR:::.econ_binary_inference(model)
+
+        s = summary(model)
+        td = tidy(model)
+        ci = confint(model)
+
+        expected_df = if (clustered && type != "CR2") {
+            rep(length(unique(df$cluster)) - 1, length(coef(model)))
+        } else if (!clustered) {
+            rep(Inf, length(coef(model)))
+        } else {
+            inference$df
+        }
+
+        expected_p = 2 * stats::pt(
+            abs(inference$statistic),
+            df = expected_df,
+            lower.tail = FALSE
+        )
+
+        results = rbind(
+            results,
+            data.frame(
+                link = link,
+                vcov = type,
+                df_equal = isTRUE(all.equal(
+                    unname(inference$df),
+                    expected_df,
+                    tolerance = 1e-8
+                )),
+                p_equal = isTRUE(all.equal(
+                    unname(inference$p.value),
+                    unname(expected_p),
+                    tolerance = 1e-8
+                )),
+                summary_equal = isTRUE(all.equal(
+                    unname(s$coefficients[, 4]),
+                    unname(inference$p.value),
+                    tolerance = 1e-8
+                )),
+                tidy_equal = isTRUE(all.equal(
+                    unname(td$p.value),
+                    unname(inference$p.value),
+                    tolerance = 1e-8
+                )),
+                ci_equal = isTRUE(all.equal(
+                    unname(ci),
+                    unname(as.matrix(td[, c("conf.low", "conf.high")])),
+                    tolerance = 1e-8
+                ))
+            )
+        )
+    }
+}
+
+print(results, row.names = FALSE)
+
+stopifnot(
+    all(results$df_equal),
+    all(results$p_equal),
+    all(results$summary_equal),
+    all(results$tidy_equal),
+    all(results$ci_equal)
+)
 
 
 

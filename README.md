@@ -102,22 +102,32 @@ The available covariance estimators depend on the model family.
 | `"HC1"` | Yes | Yes | Yes |
 | `"HC2"` | Yes | Yes | — |
 | `"HC3"` | Yes | Yes | — |
-| `"HC4"` | Yes | — | — |
-| `"HC4m"` | Yes | — | — |
-| `"HC5"` | Yes | — | — |
+| `"HC4"` | Yes | Yes | — |
+| `"HC4m"` | Yes | Yes | — |
+| `"HC5"` | Yes | Yes | — |
 | `"CR0"` | Yes | Yes | Yes |
-| `"CR1"` | Yes | — | Yes |
-| `"CR1p"` | Yes | — | — |
-| `"CR1S"` | Yes | — | — |
+| `"CR1"` | Yes | Yes | Yes |
+| `"CR1p"` | Yes | Yes | — |
+| `"CR1S"` | Yes | Yes | — |
 | `"CR2"` | Yes | Yes | — |
-| `"CR3"` | Yes | — | — |
+| `"CR3"` | Yes | Yes | — |
 | `"stata"` | Yes | Yes | — |
 
-For linear models, EconR supports all seven heteroskedasticity-consistent (HC) covariance estimators available through `sandwich::vcovHC()` and all six cluster-robust (CR) covariance estimators available through `clubSandwich::vcovCR()`.
+For linear and binary-response models, EconR supports all seven heteroskedasticity-consistent (HC) covariance estimators available through `sandwich::vcovHC()` and all six cluster-robust (CR) covariance estimators available through `clubSandwich::vcovCR()`.
 
 HC estimators account for heteroskedasticity, while CR estimators additionally allow within-cluster error dependence. The `"stata"` option provides Stata-style cluster-robust covariance estimation.
 
-The availability of covariance estimators for binary and ordered response models differs from that for linear models.
+#### Inference Conventions
+
+For binary Logit and Probit models, the reference distribution depends on the covariance estimator:
+
+- **Classical and HC0–HC5:** Asymptotic normal inference (z-tests).
+- **CR0, CR1, CR1p, CR1S, CR3, and stata:** Student's t inference with `G - 1` degrees of freedom, where `G` is the number of clusters.
+- **CR2:** Student's t inference with coefficient-specific Satterthwaite degrees of freedom, calculated using `clubSandwich`.
+
+These conventions are applied consistently to coefficient p-values and confidence intervals in `summary()`, `tidy()`, and `confint()`.
+
+The availability of covariance estimators for ordered-response models differs from that for linear and binary-response models.
 
 Robust covariance estimation builds on established infrastructure from `sandwich` and `clubSandwich`.
 
@@ -484,14 +494,14 @@ The automated test suite currently contains:
 | Model family | Passing tests |
 |---|---:|
 | Linear models (OLS/WLS) | 490 |
-| Binary models (Logit/Probit) | 209 |
+| Binary models (Logit/Probit) | 412 |
 | Ordered models (Logit/Probit) | 155 |
 | **Total** | **864** |
 
 The complete test suite passes:
 
 ```text
-FAIL 0 | WARN 0 | SKIP 0 | PASS 864
+FAIL 0 | WARN 0 | SKIP 0 | PASS 1057
 ```
 
 The package also successfully passes `R CMD check`:

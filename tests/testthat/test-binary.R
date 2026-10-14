@@ -1588,3 +1588,330 @@ test_that("Cluster missingness affects sample only for clustered inference", {
 })
 
 
+#### 27. HC4, HC4m, and HC5 covariance validation ####
+
+test_that("binary HC4, HC4m, and HC5 match sandwich", {
+
+    set.seed(123)
+
+    n = 1000
+
+    df = data.frame(
+        x1 = rnorm(n),
+        x2 = rnorm(n),
+        x3 = rbinom(n, 1, 0.5)
+    )
+
+    eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 + 0.6 * df$x3
+
+    df$y = rbinom(n, 1, plogis(eta))
+
+    for (link in c("logit", "probit")) {
+
+        reference = stats::glm(
+            y ~ x1 + x2 + x3,
+            data = df,
+            family = stats::binomial(link = link)
+        )
+
+        for (type in c("HC4", "HC4m", "HC5")) {
+
+            model = econ_binary(
+                y ~ x1 + x2 + x3,
+                data = df,
+                link = link,
+                vcov = type
+            )
+
+            expect_equal(
+                unname(coef(model)),
+                unname(coef(reference)),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(vcov(model)),
+                unname(sandwich::vcovHC(reference, type = type)),
+                tolerance = 1e-8
+            )
+        }
+    }
+})
+
+
+#### 28. CR0–CR3 covariance validation ####
+
+test_that("binary CR estimators match reference implementations", {
+
+    set.seed(123)
+
+    n = 1000
+
+    df = data.frame(
+        cluster = rep(1:50, each = 20),
+        x1 = rnorm(n),
+        x2 = rnorm(n)
+    )
+
+    cluster_effect = rnorm(50, sd = 0.5)
+
+    eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2 +
+        cluster_effect[df$cluster]
+
+    df$y = rbinom(n, 1, plogis(eta))
+
+    for (link in c("logit", "probit")) {
+
+        reference = stats::glm(
+            y ~ x1 + x2,
+            data = df,
+            family = stats::binomial(link = link)
+        )
+
+        for (type in c(
+            "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3"
+        )) {
+
+            model = econ_binary(
+                y ~ x1 + x2,
+                data = df,
+                link = link,
+                vcov = type,
+                cluster = cluster
+            )
+
+            V_ref = if (type == "CR0") {
+                sandwich::vcovCL(
+                    reference,
+                    cluster = df$cluster,
+                    type = "HC",
+                    cadjust = FALSE
+                )
+            } else {
+                as.matrix(
+                    clubSandwich::vcovCR(
+                        reference,
+                        cluster = df$cluster,
+                        type = type
+                    )
+                )
+            }
+
+            expect_equal(
+                unname(coef(model)),
+                unname(coef(reference)),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(vcov(model)),
+                unname(V_ref),
+                tolerance = 1e-8
+            )
+        }
+    }
+})
+
+
+#### 29. Binary Inference Consistency ####
+
+test_that("binary inference is consistent across covariance estimators", {
+
+    set.seed(123)
+
+    n = 1000
+
+    df = data.frame(
+        x1 = rnorm(n),
+        x2 = rnorm(n),
+        cluster = rep(seq_len(50), each = 20)
+    )
+
+    eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2
+    df$y = rbinom(n, 1, plogis(eta))
+
+    types = c(
+        "classical",
+        "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+    )
+
+    clustered_types = c(
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"
+    )
+
+    for (link in c("logit", "probit")) {
+
+        for (type in types) {
+
+            if (type %in% clustered_types) {
+
+                model = econ_binary(
+                    y ~ x1 + x2,
+                    data = df,
+                    link = link,
+                    vcov = type,
+                    cluster = cluster
+                )
+
+            } else {
+
+                model = econ_binary(
+                    y ~ x1 + x2,
+                    data = df,
+                    link = link,
+                    vcov = type
+                )
+            }
+
+            inference = EconR:::.econ_binary_inference(model)
+            s = summary(model)
+            td = tidy(model)
+            ci = confint(model)
+
+            expected_df = if (type == "CR2") {
+
+                glm_ref = stats::glm(
+                    y ~ x1 + x2,
+                    data = df,
+                    family = stats::binomial(link = link)
+                )
+
+                clubSandwich::coef_test(
+                    glm_ref,
+                    vcov = "CR2",
+                    cluster = df$cluster,
+                    test = "Satterthwaite"
+                )$df_Satt
+
+            } else if (type %in% clustered_types) {
+
+                rep(length(unique(df$cluster)) - 1, length(coef(model)))
+
+            } else {
+
+                rep(Inf, length(coef(model)))
+            }
+
+            expected_p = 2 * stats::pt(
+                abs(inference$statistic),
+                df = expected_df,
+                lower.tail = FALSE
+            )
+
+            expect_equal(
+                unname(inference$df),
+                unname(expected_df),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(inference$p.value),
+                unname(expected_p),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(s$coefficients[, 4]),
+                unname(inference$p.value),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(td$p.value),
+                unname(inference$p.value),
+                tolerance = 1e-8
+            )
+
+            expect_equal(
+                unname(ci),
+                unname(as.matrix(td[, c("conf.low", "conf.high")])),
+                tolerance = 1e-8
+            )
+        }
+    }
+})
+
+
+#### 30. Binary Cluster Validation ####
+
+test_that("binary models reject invalid clustering configurations", {
+
+    set.seed(123)
+
+    n = 200
+
+    df = data.frame(
+        x1 = rnorm(n),
+        x2 = rnorm(n),
+        cluster = rep(seq_len(20), each = 10)
+    )
+
+    eta = -0.5 + 0.8 * df$x1 - 0.4 * df$x2
+    df$y = rbinom(n, 1, plogis(eta))
+
+    clustered_types = c(
+        "CR0", "CR1", "CR1p", "CR1S",
+        "CR2", "CR3", "stata"
+    )
+
+    for (type in clustered_types) {
+
+        ###### 1. Missing cluster ####
+
+        expect_error(
+            econ_binary(
+                y ~ x1 + x2,
+                data = df,
+                vcov = type
+            ),
+            "requires a cluster variable"
+        )
+
+        ###### 2. Only one cluster ####
+
+        expect_error(
+            econ_binary(
+                y ~ x1 + x2,
+                data = df,
+                vcov = type,
+                cluster = rep(1, nrow(df))
+            ),
+            "requires at least two distinct clusters"
+        )
+    }
+
+    ###### 3. Unknown covariance estimator ####
+
+    expect_error(
+        econ_binary(
+            y ~ x1 + x2,
+            data = df,
+            vcov = "HC9"
+        )
+    )
+
+    ###### 4. Incorrect cluster vector length ####
+
+    expect_error(
+        econ_binary(
+            y ~ x1 + x2,
+            data = df,
+            vcov = "CR2",
+            cluster = seq_len(10)
+        ),
+        "must have one value per row"
+    )
+
+    ###### 5. Unknown clustering variable ####
+
+    expect_error(
+        econ_binary(
+            y ~ x1 + x2,
+            data = df,
+            vcov = "CR2",
+            cluster = nonexistent_cluster
+        ),
+        "not found"
+    )
+})
