@@ -1,6 +1,10 @@
 
 # EconR
 
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23547787.svg)](https://doi.org/10.5281/zenodo.23547787)
+
+
 `EconR` is a developing R package for econometric estimation with a consistent interface and model-specific missing-data handling.
 
 The package aims to provide a unified framework for econometric models while preserving familiar R formula syntax and compatibility with established R infrastructure.
@@ -720,3 +724,12 @@ David Bustamante Lazo
 ## Repository
 
 https://github.com/DavidBustamanteL/EconR
+
+## Citation
+
+If you use EconR in academic research, please cite:
+
+Bustamante Lazo, D. (2026). *EconR: Econometric Models with Consistent Estimation Semantics* (Version 0.1.4) [Computer software]. Zenodo.
+
+https://doi.org/10.5281/zenodo.23547787
+
