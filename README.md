@@ -85,35 +85,29 @@ The dependent variable must be an ordered factor with at least three levels.
 Ordered models are estimated using `MASS::polr()`, while `EconR` provides its own covariance estimation, inference, residuals, augmentation, and reporting methods.
 
 
+
 #### Ordered-Model Prediction Standard Errors
 
 For an ordered-response model, the probability of category $j$ is
 
-$$
-P(Y_i = j \mid X_i) =
-F(\zeta_j - X_i^\top \beta)
--
-F(\zeta_{j-1} - X_i^\top \beta)
-$$
+```math
+P(Y_i = j \mid X_i) = F(\zeta_j - X_i^\top \beta) - F(\zeta_{j-1} - X_i^\top \beta)
+```
 
 where $F$ is the logistic or standard normal cumulative distribution function, $\beta$ contains the regression coefficients, and $\zeta$ contains the category thresholds.
 
 `EconR` uses the **delta method** to estimate standard errors of predicted category probabilities:
 
-$$
-\operatorname{SE}(\hat{p}_{ij}) =
-\sqrt{
-\nabla_\theta p_{ij}^{\top}
-\widehat{V}
-\nabla_\theta p_{ij}
-}
-$$
+```math
+SE(\hat{p}_{ij}) = \sqrt{\nabla_\theta p_{ij}^\top \widehat{V} \nabla_\theta p_{ij}}
+```
 
 where $\theta = (\beta^\top, \zeta^\top)^\top$ and $\widehat{V}$ is the selected model covariance matrix.
 
 Consequently, prediction standard errors reflect the selected classical, heteroskedasticity-robust, or cluster-robust covariance estimator.
 
 Prediction standard errors have been validated against independent numerical derivatives for both ordered Logit and Probit models, including weighted estimation and factor predictors.
+
 
 ### Missing-Data Handling
 
