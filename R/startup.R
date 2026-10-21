@@ -14,7 +14,7 @@
             "EconR ", version, "\n",
             "Econometric models with consistent estimation semantics\n",
             "David Bustamante Lazo\n",
-            "GitHub: https://github.com/DavidBustamanteL/EconR",
+            "GitHub: https://github.com/DavidBustamanteL/EconR\n",
             "DOI: https://doi.org/10.5281/zenodo.23547787"
         )
     )
