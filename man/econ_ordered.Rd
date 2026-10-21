@@ -11,7 +11,7 @@ econ_ordered(
   weights = NULL,
   subset = NULL,
   na.action = stats::na.omit,
-  vcov = c("classical", "HC0", "HC1", "CR0", "CR1"),
+  vcov = c("classical", "HC0", "HC1", "CR0", "CR1", "CR1p", "CR1S", "stata"),
   cluster = NULL
 )
 }
@@ -28,7 +28,8 @@ econ_ordered(
 
 \item{na.action}{Missing-value handling function.}
 
-\item{vcov}{Covariance estimator: "classical", "HC0", "HC1", "CR0", or "CR1".}
+\item{vcov}{Covariance estimator: "classical", "HC0", "HC1",
+"CR0", "CR1", "CR1p", "CR1S", or "stata".}
 
 \item{cluster}{Optional clustering variable.}
 }

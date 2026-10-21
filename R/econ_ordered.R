@@ -8,7 +8,8 @@
 #' @param weights Optional observation weights.
 #' @param subset Optional subset of observations.
 #' @param na.action Missing-value handling function.
-#' @param vcov Covariance estimator: "classical", "HC0", "HC1", "CR0", or "CR1".
+#' @param vcov Covariance estimator: "classical", "HC0", "HC1",
+#'   "CR0", "CR1", "CR1p", "CR1S", or "stata".
 #' @param cluster Optional clustering variable.
 #' @return An object of class "econ_ordered" and "polr".
 #' @export
@@ -19,7 +20,12 @@ econ_ordered = function(
     weights = NULL,
     subset = NULL,
     na.action = stats::na.omit,
-    vcov = c("classical", "HC0", "HC1", "CR0", "CR1"),
+    vcov = c(
+    "classical",
+    "HC0", "HC1",
+    "CR0", "CR1", "CR1p", "CR1S",
+    "stata"
+),
     cluster = NULL
 ) {
 
@@ -92,9 +98,18 @@ econ_ordered = function(
         }
     }
 
-    if (vcov %in% c("CR0", "CR1") && is.null(evaluated_cluster)) {
-        stop("CR0 and CR1 require a cluster variable.")
-    }
+###### 1. Validate clustered covariance requirements ####
+
+clustered_types = c(
+    "CR0", "CR1", "CR1p", "CR1S", "stata"
+)
+
+if (vcov %in% clustered_types && is.null(evaluated_cluster)) {
+    stop(
+        "'", vcov, "' covariance estimation requires a cluster variable.",
+        call. = FALSE
+    )
+}
 
     # Construct model frame
     model_data = data
@@ -149,6 +164,7 @@ econ_ordered = function(
     )
 
     # Store EconR information
+    fit$na.action = attr(mf, "na.action")
     fit$link = link
     fit$vcov_type = vcov
     fit$weights = model_weights
@@ -159,23 +175,36 @@ econ_ordered = function(
 
     fit$omitted = setdiff(seq_len(n), fit$used)
 
-    # Align cluster identifiers with estimation observations
+    # 2. Align and validate cluster identifiers #
+
     if (is.null(evaluated_cluster)) {
 
         fit$cluster = NULL
 
     } else {
 
-        fit$cluster = evaluated_cluster[fit$used]
+    fit$cluster = evaluated_cluster[fit$used]
+
+    if (vcov %in% clustered_types) {
 
         if (anyNA(fit$cluster)) {
-            stop("cluster contains missing values in the estimation sample.")
+            stop(
+                "'cluster' must not contain missing values.",
+                call. = FALSE
+            )
         }
 
-        if (length(unique(fit$cluster)) < 2L) {
-            stop("Clustered covariance requires at least two clusters.")
+        G = length(unique(fit$cluster))
+
+        if (G < 2L) {
+            stop(
+                "'", vcov,
+                "' covariance estimation requires at least two distinct clusters.",
+                call. = FALSE
+            )
         }
     }
+}
 
     class(fit) = c("econ_ordered", class(fit))
 
@@ -266,49 +295,76 @@ estfun.econ_ordered = function(x, ...) {
 #' @export
 vcov.econ_ordered = function(object, ...) {
 
-    # Classical covariance in original threshold parameterization
+    ###### 1. Classical covariance ####
+
     V_classical = NextMethod()
 
     if (object$vcov_type == "classical") {
         return(V_classical)
     }
 
+    ###### 2. Individual score contributions ####
+
     S = sandwich::estfun(object)
+
+    n = nrow(S)
+    k = ncol(S)
+
+    ###### 3. Heteroskedasticity-robust covariance ####
 
     if (object$vcov_type %in% c("HC0", "HC1")) {
 
-        M = crossprod(S)
+    M = crossprod(S)
 
-        if (object$vcov_type == "HC1") {
+    if (object$vcov_type == "HC1") {
 
-            n = nrow(S)
-            k = ncol(S)
-
-            if (n <= k) {
-                stop(
-                    "HC1 requires more observations than estimated parameters."
-                )
-            }
-
-            M = M * n / (n - k)
+        if (n <= k) {
+            stop(
+                "HC1 requires more observations than estimated parameters.",
+                call. = FALSE
+            )
         }
 
-    } else if (object$vcov_type %in% c("CR0", "CR1")) {
+        M = M * n / (n - k)
+
+    } 
+
+    ###### 4. Cluster-robust covariance ####
+
+    } else if (object$vcov_type %in% c(
+        "CR0", "CR1", "CR1p", "CR1S", "stata"
+    )) {
 
         if (is.null(object$cluster)) {
-            stop("CR0 and CR1 require a cluster variable.")
+            stop(
+                "Clustered covariance requires a cluster variable.",
+                call. = FALSE
+            )
         }
 
         cluster = as.factor(object$cluster)
 
-        if (length(cluster) != nrow(S)) {
+        if (length(cluster) != n) {
             stop(
-                "Cluster variable is not aligned with the estimation sample."
+                "Cluster variable is not aligned with the estimation sample.",
+                call. = FALSE
             )
         }
 
         if (anyNA(cluster)) {
-            stop("Cluster variable contains missing values.")
+            stop(
+                "Cluster variable contains missing values.",
+                call. = FALSE
+            )
+        }
+
+        G = nlevels(droplevels(cluster))
+
+        if (G < 2L) {
+            stop(
+                "Clustered covariance requires at least two clusters.",
+                call. = FALSE
+            )
         }
 
         cluster_scores = rowsum(
@@ -319,25 +375,54 @@ vcov.econ_ordered = function(object, ...) {
 
         M = crossprod(cluster_scores)
 
+        ###### 5. Finite-sample corrections ####
+
         if (object$vcov_type == "CR1") {
 
-            n = nrow(S)
-            k = ncol(S)
+            # Preserve existing EconR CR1 behavior
 
             if (n <= k) {
-                stop("CR1 requires more observations than estimated parameters.")
+                stop("CR1 requires n > k.", call. = FALSE)
             }
 
             M = M * (n - 1) / (n - k)
+
+        } else if (object$vcov_type == "CR1p") {
+
+            if (G <= k) {
+                stop(
+                    "CR1p requires more clusters than parameters (G > k).",
+                    call. = FALSE
+                )
+            }
+
+            M = M * G / (G - k)
+
+        } else if (object$vcov_type %in% c("CR1S", "stata")) {
+
+            if (n <= k) {
+                stop(
+                    "CR1S and stata require n > k.",
+                    call. = FALSE
+                )
+            }
+
+            M = M * (
+                G * (n - 1) /
+                ((G - 1) * (n - k))
+            )
         }
 
     } else {
 
         stop(
             "Unsupported covariance estimator: ",
-            object$vcov_type
+            object$vcov_type,
+            call. = FALSE
         )
     }
+
+    ###### 6. Sandwich covariance ####
 
     V = V_classical %*% M %*% V_classical
 
@@ -369,24 +454,76 @@ summary.econ_ordered = function(
     std_error = std_error[names(estimate)]
 
 
-    ###### 2. Compute coefficient inference ####
+        ###### 2. Determine inference distribution ####
 
-    z_value = estimate / std_error
-
-    p_value = 2 * stats::pnorm(
-        abs(z_value),
-        lower.tail = FALSE
+    clustered_types = c(
+        "CR0", "CR1", "CR1p", "CR1S", "stata"
     )
 
+    is_clustered = object$vcov_type %in% clustered_types
 
-    ###### 3. Construct coefficient table ####
+    if (is_clustered) {
+
+        G = length(unique(object$cluster))
+
+        if (G < 2L) {
+            stop(
+                "Clustered inference requires at least two clusters.",
+                call. = FALSE
+            )
+        }
+
+        df = G - 1L
+
+    } else {
+
+        df = Inf
+    }
+
+
+    ###### 3. Compute coefficient inference ####
+
+    statistic = estimate / std_error
+
+    if (is_clustered) {
+
+        p_value = 2 * stats::pt(
+            abs(statistic),
+            df = df,
+            lower.tail = FALSE
+        )
+
+        statistic_name = "t value"
+        p_value_name = "Pr(>|t|)"
+
+    } else {
+
+        p_value = 2 * stats::pnorm(
+            abs(statistic),
+            lower.tail = FALSE
+        )
+
+        statistic_name = "z value"
+        p_value_name = "Pr(>|z|)"
+    }
+
+
+    ###### 4. Construct coefficient table ####
 
     coef_table = cbind(
         Estimate = estimate,
         "Std. Error" = std_error,
-        "z value" = z_value,
-        "Pr(>|z|)" = p_value
+        statistic
     )
+
+    colnames(coef_table)[3L] = statistic_name
+
+    coef_table = cbind(
+        coef_table,
+        p_value
+    )
+
+    colnames(coef_table)[4L] = p_value_name
 
 
     ###### 4. Construct summary object ####
@@ -396,6 +533,8 @@ summary.econ_ordered = function(
         coefficients = coef_table,
         link = object$link,
         vcov_type = object$vcov_type,
+        inference_distribution = if (is_clustered) "t" else "z",
+        inference_df = df,
         residual.deviance = object$deviance,
         AIC = object$deviance + 2 * length(estimate),
         df.residual = object$df.residual,
@@ -437,13 +576,35 @@ print.summary.econ_ordered = function(
 
     ###### 3. Print coefficients ####
 
+    ###### 3a. Print inference information ####
+
+    if (identical(x$inference_distribution, "t")) {
+
+        cat(
+            "Inference: t distribution (df = ",
+            x$inference_df,
+            ")\n",
+            sep = ""
+        )
+
+    } else {
+
+        cat("Inference: standard normal distribution\n")
+    }
+
     cat("\nCoefficients:\n")
 
     coef_table = x$coefficients
 
     ##### Significance symbols ####
 
-    p_values = coef_table[, "Pr(>|z|)"]
+    p_value_column = if (identical(x$inference_distribution, "t")) {
+    "Pr(>|t|)"
+} else {
+    "Pr(>|z|)"
+}
+
+p_values = coef_table[, p_value_column]
     
     if (isTRUE(x$extra.significance)) {
 
@@ -550,19 +711,48 @@ utils::globalVariables(c(
 ###### 7. Ordered Model Tidy Method ####
 
 #' @export
-tidy.econ_ordered = function(x, conf.int = FALSE,
-                             conf.level = 0.95, ...) {
+tidy.econ_ordered = function(
+    x,
+    conf.int = FALSE,
+    conf.level = 0.95,
+    ...
+) {
+
+    ###### 1. Extract model summary ####
 
     s = summary(x)
 
     tab = s$coefficients
 
+
+    ###### 2. Determine inference distribution ####
+
+    is_clustered = identical(
+        s$inference_distribution,
+        "t"
+    )
+
+    statistic_column = if (is_clustered) {
+        "t value"
+    } else {
+        "z value"
+    }
+
+    p_value_column = if (is_clustered) {
+        "Pr(>|t|)"
+    } else {
+        "Pr(>|z|)"
+    }
+
+
+    ###### 3. Construct tidy results ####
+
     result = data.frame(
         term = rownames(tab),
         estimate = unname(tab[, "Estimate"]),
         std.error = unname(tab[, "Std. Error"]),
-        statistic = unname(tab[, "z value"]),
-        p.value = unname(tab[, "Pr(>|z|)"]),
+        statistic = unname(tab[, statistic_column]),
+        p.value = unname(tab[, p_value_column]),
         coef.type = ifelse(
             rownames(tab) %in% names(x$zeta),
             "scale",
@@ -571,10 +761,39 @@ tidy.econ_ordered = function(x, conf.int = FALSE,
         row.names = NULL
     )
 
+
+    ###### 4. Calculate confidence intervals ####
+
     if (isTRUE(conf.int)) {
-        critical = stats::qnorm(
-            1 - (1 - conf.level) / 2
-        )
+
+        if (!is.numeric(conf.level) ||
+            length(conf.level) != 1L ||
+            is.na(conf.level) ||
+            !is.finite(conf.level) ||
+            conf.level <= 0 ||
+            conf.level >= 1) {
+
+            stop(
+                "'conf.level' must be a number strictly between 0 and 1.",
+                call. = FALSE
+            )
+        }
+
+        alpha = 1 - conf.level
+
+        if (is_clustered) {
+
+            critical = stats::qt(
+                1 - alpha / 2,
+                df = s$inference_df
+            )
+
+        } else {
+
+            critical = stats::qnorm(
+                1 - alpha / 2
+            )
+        }
 
         result$conf.low = result$estimate -
             critical * result$std.error
@@ -583,5 +802,607 @@ tidy.econ_ordered = function(x, conf.int = FALSE,
             critical * result$std.error
     }
 
+
+    ###### 5. Return tidy results ####
+
     tibble::as_tibble(result)
+}
+
+
+###### 8. Ordered Model Confidence Intervals ####
+
+#' @export
+confint.econ_ordered = function(
+    object,
+    parm,
+    level = 0.95,
+    ...
+) {
+
+    ###### 1. Validate confidence level ####
+
+    if (!is.numeric(level) ||
+        length(level) != 1L ||
+        is.na(level) ||
+        !is.finite(level) ||
+        level <= 0 ||
+        level >= 1) {
+
+        stop(
+            "'level' must be a single number strictly between 0 and 1.",
+            call. = FALSE
+        )
+    }
+
+
+    ###### 2. Extract all model parameters ####
+
+    b = c(
+        stats::coef(object),
+        object$zeta
+    )
+
+    se = sqrt(diag(stats::vcov(object)))
+
+    se = se[names(b)]
+
+
+    ###### 3. Select parameters ####
+
+    if (missing(parm)) {
+
+        parm = seq_along(b)
+
+    } else if (is.character(parm)) {
+
+        parm = match(parm, names(b))
+
+        if (anyNA(parm)) {
+            stop(
+                "Unknown parameter name in 'parm'.",
+                call. = FALSE
+            )
+        }
+
+    } else if (is.numeric(parm)) {
+
+        if (anyNA(parm) ||
+            any(!is.finite(parm)) ||
+            any(parm != floor(parm)) ||
+            any(parm < 1 | parm > length(b))) {
+
+            stop(
+                "Invalid parameter selection in 'parm'.",
+                call. = FALSE
+            )
+        }
+
+    } else {
+
+        stop(
+            "'parm' must contain parameter names or indices.",
+            call. = FALSE
+        )
+    }
+
+
+    ###### 4. Determine inference distribution ####
+
+    s = summary(object)
+
+    if (identical(s$inference_distribution, "t")) {
+
+        critical = stats::qt(
+            (1 + level) / 2,
+            df = s$inference_df
+        )
+
+    } else {
+
+        critical = stats::qnorm(
+            (1 + level) / 2
+        )
+    }
+
+
+    ###### 5. Construct confidence intervals ####
+
+    ci = cbind(
+        b[parm] - critical * se[parm],
+        b[parm] + critical * se[parm]
+    )
+
+    alpha = (1 - level) / 2
+
+    colnames(ci) = paste0(
+        format(
+            100 * c(alpha, 1 - alpha),
+            trim = TRUE
+        ),
+        " %"
+    )
+
+    ci
+}
+
+
+
+#### 9. Ordered Model ANOVA ####
+
+#' @export
+anova.econ_ordered = function(object, ..., test = "Chisq") {
+
+    ###### 1. Collect and validate models ####
+
+    models = c(list(object), list(...))
+
+    if (length(models) < 2L) {
+        stop(
+            "Ordered ANOVA currently requires at least two models.",
+            call. = FALSE
+        )
+    }
+
+    if (!all(vapply(
+        models,
+        inherits,
+        logical(1),
+        what = "econ_ordered"
+    ))) {
+        stop(
+            "All models must be econ_ordered objects.",
+            call. = FALSE
+        )
+    }
+
+    if (!identical(test, "Chisq")) {
+        stop(
+            "Only likelihood-ratio tests ('Chisq') are supported.",
+            call. = FALSE
+        )
+    }
+
+    ###### 2. Verify comparable estimation data ####
+
+    reference = models[[1L]]
+
+    for (i in seq_along(models)[-1L]) {
+
+        current = models[[i]]
+
+        if (!identical(reference$link, current$link)) {
+            stop("Models must use the same link function.", call. = FALSE)
+        }
+
+        if (!identical(reference$used, current$used) ||
+            !identical(
+                rownames(reference$model),
+                rownames(current$model)
+            )) {
+            stop(
+                "Models must use identical estimation samples.",
+                call. = FALSE
+            )
+        }
+
+        y_ref = stats::model.response(reference$model)
+        y_cur = stats::model.response(current$model)
+
+        if (!identical(y_ref, y_cur)) {
+            stop(
+                "Models must use identical dependent-variable values.",
+                call. = FALSE
+            )
+        }
+
+                if (!isTRUE(all.equal(
+            reference$weights,
+            current$weights,
+            check.attributes = FALSE
+        ))) {
+            stop(
+                "Models must use identical observation weights.",
+                call. = FALSE
+            )
+        }
+
+        ###### Verify shared regressor values ####
+
+        X_ref = stats::model.matrix(reference)
+        X_cur = stats::model.matrix(current)
+
+        shared = intersect(
+            colnames(X_ref),
+            colnames(X_cur)
+        )
+
+        if (length(shared) > 0L) {
+            if (!isTRUE(all.equal(
+                unname(X_ref[, shared, drop = FALSE]),
+                unname(X_cur[, shared, drop = FALSE]),
+                tolerance = 1e-10
+            ))) {
+                stop(
+                    "Models contain different values for shared regressors.",
+                    call. = FALSE
+                )
+            }
+        }
+    }
+
+    ###### 3. Extract likelihoods and model dimensions ####
+
+    ll = vapply(
+        models,
+        function(x) as.numeric(stats::logLik(x)),
+        numeric(1)
+    )
+
+    df = vapply(
+        models,
+        function(x) as.numeric(attr(stats::logLik(x), "df")),
+        numeric(1)
+    )
+
+    ###### 4. Verify nested model specifications ####
+
+    X = lapply(models, function(x) {
+        stats::model.matrix(x)
+    })
+
+    for (i in seq_len(length(models) - 1L)) {
+
+        for (j in seq.int(i + 1L, length(models))) {
+
+            small = if (df[i] <= df[j]) i else j
+            large = if (df[i] <= df[j]) j else i
+
+            if (df[small] == df[large]) {
+                stop(
+                    "Models must have different parameter counts.",
+                    call. = FALSE
+                )
+            }
+
+            rank_large = qr(X[[large]])$rank
+            rank_combined = qr(
+                cbind(X[[large]], X[[small]])
+            )$rank
+
+            if (rank_combined > rank_large) {
+                stop(
+                    "Model specifications must be nested.",
+                    call. = FALSE
+                )
+            }
+        }
+    }
+
+    ###### 5. Compute likelihood-ratio comparisons ####
+
+    delta_df = c(NA_real_, diff(df))
+    delta_ll = c(NA_real_, diff(ll))
+
+    chisq = 2 * delta_ll
+    chisq[1L] = NA_real_
+
+    # Negative differences in model complexity represent reversed
+    # comparisons, not valid forward likelihood-ratio tests.
+    if (any(delta_df[-1L] <= 0)) {
+        stop(
+            "Models must be supplied in increasing complexity.",
+            call. = FALSE
+        )
+    }
+
+    if (any(chisq[-1L] < -1e-7)) {
+        stop(
+            "The larger model has a lower maximized log-likelihood.",
+            call. = FALSE
+        )
+    }
+
+    chisq[-1L] = pmax(chisq[-1L], 0)
+
+    p_value = stats::pchisq(
+        chisq,
+        df = delta_df,
+        lower.tail = FALSE
+    )
+
+    ###### 6. Construct ANOVA table ####
+
+    result = data.frame(
+        Model = vapply(
+            models,
+            function(x) paste(deparse(stats::formula(x)), collapse = ""),
+            character(1)
+        ),
+        Df = df,
+        logLik = ll,
+        `Df Diff` = delta_df,
+        Chisq = chisq,
+        `Pr(>Chisq)` = p_value,
+        check.names = FALSE
+    )
+
+    rownames(result) = seq_along(models)
+
+    structure(
+        result,
+        heading = "Likelihood ratio tests of ordered regression models",
+        class = c("anova", "data.frame")
+    )
+}
+
+
+
+#### 10. Ordered Model Augmentation ####
+
+#' @export
+augment.econ_ordered = function(
+    x,
+    data = NULL,
+    newdata = NULL,
+    se_fit = FALSE,
+    ...
+) {
+
+    ###### 1. Validate arguments ####
+
+    if (!is.logical(se_fit) ||
+        length(se_fit) != 1L ||
+        is.na(se_fit)) {
+        stop(
+            "'se_fit' must be TRUE or FALSE.",
+            call. = FALSE
+        )
+    }
+
+
+    if (!is.null(data) && !is.null(newdata)) {
+        stop(
+            "Supply either 'data' or 'newdata', not both.",
+            call. = FALSE
+        )
+    }
+
+    ###### 2. Determine prediction data ####
+
+    out_of_sample = !is.null(newdata)
+
+    if (out_of_sample) {
+
+        prediction_data = as.data.frame(newdata)
+        result = prediction_data
+
+    } else {
+
+        prediction_data = as.data.frame(x$model)
+
+        if (is.null(data)) {
+            result = as.data.frame(x$model)
+        } else {
+            result = as.data.frame(data)
+        }
+
+        if (nrow(result) != length(x$used)) {
+            stop(
+                "'data' must contain the estimation observations.",
+                call. = FALSE
+            )
+        }
+
+        # Remove internal estimation variables
+        internal = c(
+            ".econ_prior_weights",
+            ".econ_ordered_weights",
+            ".econ_ordered_subset"
+        )
+
+        result = result[
+            ,
+            !names(result) %in% internal,
+            drop = FALSE
+        ]
+    }
+
+    ###### 3. Predict category probabilities ####
+
+    probabilities = stats::predict(
+        x,
+        newdata = prediction_data,
+        type = "probs"
+    )
+
+    probabilities = as.matrix(probabilities)
+
+    categories = colnames(probabilities)
+
+    if (is.null(categories)) {
+        stop(
+            "Predicted probabilities must have category names.",
+            call. = FALSE
+        )
+    }
+
+    ###### 4. Predict most likely category ####
+
+    fitted_class = stats::predict(
+        x,
+        newdata = prediction_data,
+        type = "class"
+    )
+
+    result$.fitted = fitted_class
+
+    ###### 5. Add category probabilities ####
+
+    probability_names = paste0(
+        ".fitted_",
+        make.names(categories, unique = TRUE)
+    )
+
+    for (j in seq_along(probability_names)) {
+        result[[probability_names[j]]] =
+            unname(probabilities[, j])
+    }
+    
+    ###### 5a. Delta-method prediction standard errors ####
+
+    if (isTRUE(se_fit)) {
+
+        terms_object = stats::delete.response(stats::terms(x))
+        mf_new = stats::model.frame(
+            terms_object,
+            data = prediction_data,
+            xlev = x$xlevels,
+            na.action = stats::na.pass
+        )
+
+        X = stats::model.matrix(
+            terms_object,
+            data = mf_new,
+            contrasts.arg = x$contrasts
+        )
+
+        X = X[, names(stats::coef(x)), drop = FALSE]
+
+        beta = stats::coef(x)
+        zeta = x$zeta
+
+        eta = drop(X %*% beta)
+
+        K = length(beta)
+        J = length(zeta) + 1L
+
+        V = stats::vcov(x)
+        parameter_names = c(names(beta), names(zeta))
+        V = V[parameter_names, parameter_names, drop = FALSE]
+
+        density = if (x$link == "logit") {
+            stats::dlogis
+        } else {
+            stats::dnorm
+        }
+
+        se_prob = matrix(
+            NA_real_,
+            nrow = nrow(X),
+            ncol = J,
+            dimnames = list(NULL, categories)
+        )
+
+        for (i in seq_len(nrow(X))) {
+
+            for (j in seq_len(J)) {
+
+                f_upper = if (j == J) {
+                    0
+                } else {
+                    density(zeta[j] - eta[i])
+                }
+
+                f_lower = if (j == 1L) {
+                    0
+                } else {
+                    density(zeta[j - 1L] - eta[i])
+                }
+
+                gradient = numeric(K + J - 1L)
+
+                # Derivative with respect to slope coefficients
+                gradient[seq_len(K)] =
+                    (f_lower - f_upper) * X[i, ]
+
+                # Derivatives with respect to thresholds
+                if (j < J) {
+                    gradient[K + j] = f_upper
+                }
+
+                if (j > 1L) {
+                    gradient[K + j - 1L] = -f_lower
+                }
+
+                variance = drop(
+                    crossprod(gradient, V %*% gradient)
+                )
+
+                se_prob[i, j] = sqrt(pmax(variance, 0))
+            }
+        }
+
+        se_names = paste0(
+            ".se.fit_",
+            make.names(categories, unique = TRUE)
+        )
+
+        for (j in seq_along(se_names)) {
+            result[[se_names[j]]] = se_prob[, j]
+        }
+    }
+
+
+    ###### 6. Calculate in-sample residuals ####
+
+    if (!out_of_sample) {
+
+        observed = stats::model.response(x$model)
+
+        # Expected ordinal category index
+        expected_index = drop(
+            probabilities %*% seq_along(categories)
+        )
+
+        # Ordinal-score residual:
+        # observed category index minus expected index
+        result$.resid = as.integer(observed) -
+            expected_index
+    }
+
+    ###### 7. Return augmented data ####
+
+    tibble::as_tibble(result)
+}
+
+
+#### 11. Ordered Model Residuals ####
+
+#' @export
+residuals.econ_ordered = function(
+    object,
+    type = c("response", "pearson"),
+    ...
+) {
+
+    type = match.arg(type)
+
+    y = as.integer(stats::model.response(object$model))
+
+    probabilities = as.matrix(
+        stats::predict(
+            object,
+            newdata = object$model,
+            type = "probs"
+        )
+    )
+
+    categories = seq_len(ncol(probabilities))
+
+    expected = drop(probabilities %*% categories)
+
+    response_residuals = y - expected
+
+    if (type == "response") {
+    return(stats::naresid(object$na.action, response_residuals))
+}
+
+    variance = drop(
+        probabilities %*% (categories^2)
+    ) - expected^2
+
+    pearson_residuals = response_residuals /
+    sqrt(pmax(variance, .Machine$double.eps))
+
+stats::naresid(object$na.action, pearson_residuals)
 }

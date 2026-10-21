@@ -216,12 +216,14 @@ test_that("CR0, CR2, and stata match estimatr", {
             vcov = type
         )
 
-        b = estimatr::lm_robust(
-            mpg ~ wt + hp,
-            data = d,
-            clusters = cluster_id,
-            se_type = type
-        )
+        b = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
+                mpg ~ wt + hp,
+                data = d,
+                clusters = cluster_id,
+                se_type = type
+        )))
 
         expect_equal(
             coef(a),
@@ -275,13 +277,15 @@ test_that("clustered WLS keeps the correct estimation sample", {
             "Some observations have missingness in the weights variable"
         )
 
-        suppressWarnings(
-            b <- estimatr::lm_robust(
-                mpg ~ wt + hp,
-                data = d,
-                weights = test_weight,
-                clusters = cluster_id,
-                se_type = type
+        b = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
+                    mpg ~ wt + hp,
+                    data = d,
+                    weights = test_weight,
+                    clusters = cluster_id,
+                    se_type = type
+                )
             )
         )
 
@@ -326,11 +330,13 @@ test_that("rank-deficient HC3 models match estimatr", {
         vcov = "HC3"
     )
 
-    b = estimatr::lm_robust(
+    b = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
         mpg ~ wt + wt_copy + hp,
         data = d,
         se_type = "HC3"
-    )
+    )))
 
     expect_equal(
         coef(a),
@@ -435,12 +441,14 @@ test_that("rank-deficient clustered models match estimatr", {
             vcov = type
         )
 
-        b = estimatr::lm_robust(
+        b = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
             mpg ~ wt + wt_copy + hp,
             data = d,
             clusters = cluster_id,
             se_type = type
-        )
+        )))
 
         expect_equal(
             coef(a),
@@ -4732,11 +4740,13 @@ test_that("HC1 summary joint test matches estimatr", {
         vcov = "HC1"
     )
 
-    reference = estimatr::lm_robust(
+    reference = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
         mpg ~ wt + hp,
         data = mtcars,
         se_type = "HC1"
-    )
+    )))
 
     econ_summary = summary(
         econ
@@ -4969,12 +4979,14 @@ test_that("Stata covariance and inference match estimatr", {
         cluster = cluster_id
     )
 
-    reference = estimatr::lm_robust(
+    reference = suppressWarnings(
+    suppressMessages(
+        estimatr::lm_robust(
         mpg ~ wt + hp,
         data = d,
         clusters = cluster_id,
         se_type = "stata"
-    )
+    )))
 
     ###### 3. Compare covariance matrices ####
 

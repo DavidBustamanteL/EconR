@@ -1722,6 +1722,124 @@ for (name in names(models)) {
 }
 
 
+#### 35. Test clubSandwich support for ordered models ####
+
+set.seed(123)
+
+n = 500
+
+df = data.frame(
+    x1 = rnorm(n),
+    x2 = rnorm(n),
+    cluster = rep(seq_len(25), each = 20)
+)
+
+latent = 0.8 * df$x1 - 0.4 * df$x2 + rlogis(n)
+
+df$y = ordered(
+    cut(
+        latent,
+        breaks = c(-Inf, -1, 0, 1, Inf),
+        labels = c("Low", "Medium", "High", "Very high")
+    )
+)
+
+reference = MASS::polr(
+    y ~ x1 + x2,
+    data = df,
+    method = "logistic",
+    Hess = TRUE
+)
+
+for (type in c("CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3")) {
+
+    cat("\n", type, ": ", sep = "")
+
+    tryCatch(
+        {
+            V = clubSandwich::vcovCR(
+                reference,
+                cluster = df$cluster,
+                type = type
+            )
+
+            cat("SUPPORTED\n")
+            print(dim(V))
+        },
+        error = function(e) {
+            cat("NOT SUPPORTED: ", conditionMessage(e), "\n")
+        }
+    )
+}
+
+
+#### 36. Validate ordered-model scores ####
+
+library(numDeriv)
+
+model = econ_ordered(
+    y ~ x1 + x2,
+    data = df,
+    link = "logit",
+    vcov = "classical"
+)
+
+S = sandwich::estfun(model)
+
+X = stats::model.matrix(model)
+X = X[, colnames(X) != "(Intercept)", drop = FALSE]
+
+y = as.integer(stats::model.response(model$model))
+
+K = length(stats::coef(model))
+J = length(model$zeta) + 1L
+
+theta = c(stats::coef(model), model$zeta)
+
+loglik_i = function(par, i) {
+
+    beta = par[seq_len(K)]
+    zeta = par[K + seq_len(J - 1L)]
+
+    eta = drop(X[i, , drop = FALSE] %*% beta)
+
+    upper = if (y[i] == J) Inf else zeta[y[i]]
+    lower = if (y[i] == 1L) -Inf else zeta[y[i] - 1L]
+
+    p = plogis(upper - eta) - plogis(lower - eta)
+
+    log(p)
+}
+
+indices = c(1, 2, 3, 10, 25, 50)
+
+comparison = do.call(
+    rbind,
+    lapply(indices, function(i) {
+
+        numerical = numDeriv::grad(
+            func = function(par) loglik_i(par, i),
+            x = theta
+        )
+
+        data.frame(
+            observation = i,
+            parameter = names(theta),
+            analytical = as.numeric(S[i, ]),
+            numerical = as.numeric(numerical),
+            difference = as.numeric(S[i, ]) - as.numeric(numerical)
+        )
+    })
+)
+
+print(comparison)
+
+cat(
+    "\nMaximum absolute difference:",
+    max(abs(comparison$difference)),
+    "\n"
+)
+
 
 
 
