@@ -1,7 +1,7 @@
 Package: EconR
 Type: Package
 Title: Consistent Econometric Models with Model-Specific Missing-Data Handling
-Version: 0.1.3
+Version: 0.1.4
 Authors@R: person('David', 'Bustamante', role = c('aut','cre'), email = 'davidbustamantelazo@gmail.com')
 Description: A consistent interface for econometric estimation with model-specific missing-data handling. Implements ordinary and weighted least squares (OLS/WLS), binary Logit and Probit, and ordered Logit and Probit regression models. Supports classical, heteroskedasticity-consistent, and cluster-robust covariance estimation, observation weights, subsetting, and standard model methods for inference, prediction, diagnostics, and model augmentation.
 License: MIT + file LICENSE

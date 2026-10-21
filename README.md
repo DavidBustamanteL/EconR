@@ -7,7 +7,7 @@ The package aims to provide a unified framework for econometric models while pre
 
 ## Current Version
 
-**EconR 0.1.3**
+**EconR 0.1.4**
 
 The current version implements three model families:
 
