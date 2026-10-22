@@ -438,6 +438,7 @@ vcov.econ_ordered = function(object, ...) {
 summary.econ_ordered = function(
     object,
     extra.significance = FALSE,
+    exponentiate = FALSE,
     ...
 ) {
 
@@ -525,8 +526,35 @@ summary.econ_ordered = function(
 
     colnames(coef_table)[4L] = p_value_name
 
+        ###### 5. Exponentiate coefficients ####
 
-    ###### 4. Construct summary object ####
+    if (!is.logical(exponentiate) ||
+        length(exponentiate) != 1L ||
+        is.na(exponentiate)) {
+
+        stop("'exponentiate' must be TRUE or FALSE.", call. = FALSE)
+    }
+
+    if (exponentiate && object$link != "logit") {
+        stop(
+            "Exponentiation is only supported for ordered Logit models.",
+            call. = FALSE
+        )
+    }
+
+    if (exponentiate) {
+
+        is_threshold = rownames(coef_table) %in% names(object$zeta)
+
+        coef_table[!is_threshold, "Estimate"] =
+            exp(coef_table[!is_threshold, "Estimate"])
+
+        coef_table[is_threshold, "Estimate"] =
+            exp(-coef_table[is_threshold, "Estimate"])
+    }
+
+
+    ###### 5a. Construct summary object ####
 
     ans = list(
         call = object$call,
@@ -538,7 +566,8 @@ summary.econ_ordered = function(
         residual.deviance = object$deviance,
         AIC = object$deviance + 2 * length(estimate),
         df.residual = object$df.residual,
-        extra.significance = extra.significance
+        extra.significance = extra.significance,
+        exponentiate = exponentiate
     )
 
     class(ans) = "summary.econ_ordered"
@@ -593,6 +622,14 @@ print.summary.econ_ordered = function(
     }
 
     cat("\nCoefficients:\n")
+
+        if (isTRUE(x$exponentiate)) {
+        cat(
+            "Odds ratios (standard errors and test statistics ",
+            "on original coefficient scale):\n",
+            sep = ""
+        )
+    }
 
     coef_table = x$coefficients
 
@@ -715,6 +752,7 @@ tidy.econ_ordered = function(
     x,
     conf.int = FALSE,
     conf.level = 0.95,
+    exponentiate = FALSE,
     ...
 ) {
 
@@ -723,6 +761,22 @@ tidy.econ_ordered = function(
     s = summary(x)
 
     tab = s$coefficients
+
+    ###### Validate exponentiation ####
+
+    if (!is.logical(exponentiate) ||
+        length(exponentiate) != 1L ||
+        is.na(exponentiate)) {
+
+        stop("'exponentiate' must be TRUE or FALSE.", call. = FALSE)
+    }
+
+    if (exponentiate && x$link != "logit") {
+        stop(
+            "Exponentiation is only supported for ordered Logit models.",
+            call. = FALSE
+        )
+    }
 
 
     ###### 2. Determine inference distribution ####
@@ -803,7 +857,32 @@ tidy.econ_ordered = function(
     }
 
 
-    ###### 5. Return tidy results ####
+        ###### 5. Exponentiate estimates and confidence intervals ####
+
+    if (exponentiate) {
+
+        is_threshold = result$coef.type == "scale"
+
+        if (isTRUE(conf.int)) {
+
+            lower = result$conf.low
+            upper = result$conf.high
+
+            result$conf.low = exp(lower)
+            result$conf.high = exp(upper)
+
+            result$conf.low[is_threshold] = exp(-upper[is_threshold])
+            result$conf.high[is_threshold] = exp(-lower[is_threshold])
+        }
+
+        result$estimate[!is_threshold] =
+            exp(result$estimate[!is_threshold])
+
+        result$estimate[is_threshold] =
+            exp(-result$estimate[is_threshold])
+    }
+
+    ###### 6. Return tidy results ####
 
     tibble::as_tibble(result)
 }

@@ -287,11 +287,11 @@ The development version can be installed directly from GitHub:
 remotes::install_github("DavidBustamanteL/EconR")
 ```
 
-To install the tagged `v0.1.3` release specifically, once published:
+To install the tagged `v0.1.4` release specifically, once published:
 
 ```r
 remotes::install_github(
-    "DavidBustamanteL/EconR@v0.1.3"
+    "DavidBustamanteL/EconR@v0.1.4"
 )
 ```
 
@@ -632,7 +632,7 @@ sandwich::vcovHC(
 
 ## Validation
 
-Version `0.1.3` has been tested against established R implementations and infrastructure, including:
+Version `0.1.4` has been tested against established R implementations and infrastructure, including:
 
 - `lm()`
 - `glm()`
@@ -661,13 +661,13 @@ The automated test suite currently reports:
 |---|---:|
 | Linear models (OLS/WLS) | 490 |
 | Binary models (Logit/Probit) | 412 |
-| Ordered models (Logit/Probit) | 443 |
-| **Total** | **1,345** |
+| Ordered models (Logit/Probit) | 453 |
+| **Total** | **1,355** |
 
 The complete test suite passes:
 
 ```text
-FAIL 0 | WARN 0 | SKIP 0 | PASS 1345
+FAIL 0 | WARN 0 | SKIP 0 | PASS 1355
 ```
 
 The package also successfully passes `R CMD check`:
@@ -676,7 +676,7 @@ The package also successfully passes `R CMD check`:
 0 errors | 0 warnings | 0 notes
 ```
 
-These results describe the validation performed for version `0.1.3` and do not imply that all possible model specifications or data configurations have been tested.
+These results describe the validation performed for version `0.1.4` and do not imply that all possible model specifications or data configurations have been tested.
 
 ## Design Principle
 
@@ -700,7 +700,7 @@ This philosophy is applied across linear, binary-response, and ordered-response 
 
 `EconR` is under active development.
 
-Version `0.1.3` extends the validated OLS/WLS and binary Logit/Probit framework with:
+Version `0.1.4` extends the validated OLS/WLS and binary Logit/Probit framework with:
 
 - Ordered Logit and Probit estimation
 - Robust and clustered covariance estimation for ordered-response models

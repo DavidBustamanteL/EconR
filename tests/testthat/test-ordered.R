@@ -2591,3 +2591,129 @@ test_that("Ordered na.exclude restores omitted observations", {
         expect_true(all(is.finite(P_new)))
     }
 })
+
+
+#### 21. Ordered Logit Odds Ratios ####
+
+testthat::test_that("Ordered Logit exponentiation is correct", {
+
+    set.seed(123)
+
+    n = 1000
+
+    df = data.frame(
+        x1 = rnorm(n),
+        x2 = rnorm(n)
+    )
+
+    latent = 0.8 * df$x1 - 0.6 * df$x2 + rlogis(n)
+
+    df$y = ordered(
+        cut(
+            latent,
+            breaks = c(-Inf, -0.5, 0.8, Inf),
+            labels = c("Low", "Medium", "High")
+        )
+    )
+
+    model = econ_ordered(
+        y ~ x1 + x2,
+        data = df,
+        link = "logit"
+    )
+
+    ###### 1. Tidy estimates ####
+
+    original = generics::tidy(
+        model,
+        conf.int = TRUE
+    )
+
+    odds = generics::tidy(
+        model,
+        conf.int = TRUE,
+        exponentiate = TRUE
+    )
+
+    is_threshold = original$coef.type == "scale"
+
+    expected = original$estimate
+    expected[!is_threshold] = exp(expected[!is_threshold])
+    expected[is_threshold] = exp(-expected[is_threshold])
+
+    testthat::expect_equal(
+        odds$estimate,
+        expected
+    )
+
+    ###### 2. Preserve inference ####
+
+    testthat::expect_equal(
+        odds$std.error,
+        original$std.error
+    )
+
+    testthat::expect_equal(
+        odds$statistic,
+        original$statistic
+    )
+
+    testthat::expect_equal(
+        odds$p.value,
+        original$p.value
+    )
+
+    ###### 3. Confidence intervals ####
+
+    expected_low = exp(original$conf.low)
+    expected_high = exp(original$conf.high)
+
+    expected_low[is_threshold] =
+        exp(-original$conf.high[is_threshold])
+
+    expected_high[is_threshold] =
+        exp(-original$conf.low[is_threshold])
+
+    testthat::expect_equal(
+        odds$conf.low,
+        expected_low
+    )
+
+    testthat::expect_equal(
+        odds$conf.high,
+        expected_high
+    )
+
+    ###### 4. Summary ####
+
+    original_summary = summary(model)
+    odds_summary = summary(model, exponentiate = TRUE)
+
+    testthat::expect_equal(
+        unname(odds_summary$coefficients[, "Estimate"]),
+        expected
+    )
+
+    testthat::expect_equal(
+        odds_summary$coefficients[, "Std. Error"],
+        original_summary$coefficients[, "Std. Error"]
+    )
+
+    ###### 5. Reject ordered Probit ####
+
+    probit = econ_ordered(
+        y ~ x1 + x2,
+        data = df,
+        link = "probit"
+    )
+
+    testthat::expect_error(
+        generics::tidy(probit, exponentiate = TRUE),
+        "only supported for ordered Logit"
+    )
+
+    testthat::expect_error(
+        summary(probit, exponentiate = TRUE),
+        "only supported for ordered Logit"
+    )
+})
