@@ -60,7 +60,6 @@ S3method(anova,econ_binary)
 S3method(augment,econ_binary)
 
 importFrom(broom,augment)
-
 importFrom(stats,coef)
 importFrom(stats,model.matrix)
 importFrom(stats,predict)

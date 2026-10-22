@@ -1915,3 +1915,128 @@ test_that("binary models reject invalid clustering configurations", {
         "not found"
     )
 })
+
+
+#### 31. McFadden Pseudo-R-Squared ####
+
+test_that("McFadden pseudo-R-squared matches glm", {
+
+    for (link in c("logit", "probit")) {
+
+        ###### 1. Estimate Models ####
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = mtcars,
+                link = link,
+                vcov = "HC1"
+            )
+        )
+
+        reference = suppressWarnings(
+            glm(
+                am ~ wt + hp,
+                data = mtcars,
+                family = binomial(link = link)
+            )
+        )
+
+        ###### 2. Calculate Reference Statistic ####
+
+        expected = 1 -
+            reference$deviance / reference$null.deviance
+
+        ###### 3. Test Summary ####
+
+        expect_equal(
+            summary(econ)$pseudo.r.squared,
+            expected,
+            tolerance = 1e-10
+        )
+
+        ###### 4. Test Glance ####
+
+        G = generics::glance(econ)
+
+        expect_equal(
+            G$pseudo.r.squared,
+            expected,
+            tolerance = 1e-10
+        )
+
+        ###### 5. Test Printed Summary ####
+
+        expect_output(
+            print(summary(econ)),
+            "McFadden pseudo-R"
+        )
+    }
+})
+
+
+#### 32. McFadden Pseudo-R-Squared with Weights ####
+
+test_that("Weighted McFadden pseudo-R-squared matches glm", {
+
+    df = mtcars
+    df$w = df$disp / mean(df$disp)
+
+    for (link in c("logit", "probit")) {
+
+        econ = suppressWarnings(
+            econ_binary(
+                am ~ wt + hp,
+                data = df,
+                weights = w,
+                link = link
+            )
+        )
+
+        reference = suppressWarnings(
+            glm(
+                am ~ wt + hp,
+                data = df,
+                weights = w,
+                family = binomial(link = link)
+            )
+        )
+
+        expected = 1 -
+            reference$deviance / reference$null.deviance
+
+        expect_equal(
+            summary(econ)$pseudo.r.squared,
+            expected,
+            tolerance = 1e-10
+        )
+
+        expect_equal(
+            generics::glance(econ)$pseudo.r.squared,
+            expected,
+            tolerance = 1e-10
+        )
+    }
+})
+
+
+#### 33. McFadden Pseudo-R-Squared Edge Cases ####
+
+test_that("McFadden pseudo-R-squared handles undefined null likelihood", {
+
+    econ = econ_binary(
+        am ~ wt,
+        data = mtcars,
+        link = "logit"
+    )
+
+    econ$null.deviance = 0
+
+    expect_true(
+        is.na(summary(econ)$pseudo.r.squared)
+    )
+
+    expect_true(
+        is.na(generics::glance(econ)$pseudo.r.squared)
+    )
+})

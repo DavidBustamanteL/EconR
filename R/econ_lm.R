@@ -212,11 +212,10 @@ econ_lm <- function(
     weights = NULL,
     subset = NULL,
     na.action = stats::na.omit,
-vcov = c(
-    "classical",
-    "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
-    "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3",
-    "stata"),
+    vcov = c(
+        "classical",
+        "HC0", "HC1", "HC2", "HC3", "HC4", "HC4m", "HC5",
+        "CR0", "CR1", "CR1p", "CR1S", "CR2", "CR3", "stata"),
     cluster = NULL
 ) {
 

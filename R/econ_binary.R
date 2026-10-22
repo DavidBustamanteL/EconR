@@ -384,6 +384,24 @@ if (type %in% c("CR1", "CR1p", "CR1S", "CR2", "CR3")) {
 }
 
 
+###### 3a. McFadden Pseudo-R-Squared ####
+
+.econ_binary_pseudo_r2 = function(object) {
+
+    null_deviance = object$null.deviance
+    residual_deviance = object$deviance
+
+    if (
+        !is.finite(null_deviance) ||
+        !is.finite(residual_deviance) ||
+        null_deviance <= 0
+    ) {
+        return(NA_real_)
+    }
+
+    1 - residual_deviance / null_deviance
+}
+
 ###### 4. Binary Model Summary ####
 
 #' @export
@@ -432,6 +450,7 @@ if (clustered) {
         link = object$link,
         deviance = object$deviance,
         null.deviance = object$null.deviance,
+        pseudo.r.squared = .econ_binary_pseudo_r2(object),
         df.residual = object$df.residual,
         converged = object$converged,
         iter = object$iter,
@@ -647,8 +666,17 @@ print.summary.econ_binary = function(
         sep = ""
     )
 
+    ###### 8. Print McFadden Pseudo-R-Squared ####
 
-    ###### 8. Print convergence ####
+cat(
+    "McFadden pseudo-R-squared: ",
+    sprintf("%.5f", x$pseudo.r.squared),
+    "\n",
+    sep = ""
+)
+
+
+    ###### 9. Print convergence ####
 
     cat(
         "Converged: ",
@@ -984,6 +1012,7 @@ glance.econ_binary <- function(
         bic = bic,
         deviance = deviance,
         null.deviance = null_deviance,
+        pseudo.r.squared = .econ_binary_pseudo_r2(x),
         df.residual = x$df.residual,
         nobs = n,
         converged = x$converged
