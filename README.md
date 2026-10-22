@@ -660,14 +660,14 @@ The automated test suite currently reports:
 | Model family | Passing assertions |
 |---|---:|
 | Linear models (OLS/WLS) | 490 |
-| Binary models (Logit/Probit) | 412 |
-| Ordered models (Logit/Probit) | 453 |
-| **Total** | **1,355** |
+| Binary models (Logit/Probit) | 424 |
+| Ordered models (Logit/Probit) | 467 |
+| **Total** | **1,381** |
 
 The complete test suite passes:
 
 ```text
-FAIL 0 | WARN 0 | SKIP 0 | PASS 1355
+FAIL 0 | WARN 0 | SKIP 0 | PASS 1381
 ```
 
 The package also successfully passes `R CMD check`:

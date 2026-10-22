@@ -21,11 +21,9 @@ econ_ordered = function(
     subset = NULL,
     na.action = stats::na.omit,
     vcov = c(
-    "classical",
-    "HC0", "HC1",
-    "CR0", "CR1", "CR1p", "CR1S",
-    "stata"
-),
+        "classical",
+        "HC0", "HC1",
+        "CR0", "CR1", "CR1p", "CR1S", "stata"),
     cluster = NULL
 ) {
 
@@ -431,6 +429,51 @@ vcov.econ_ordered = function(object, ...) {
     return(V)
 }
 
+###### 3a. McFadden Pseudo-R-Squared ####
+
+.econ_ordered_pseudo_r2 = function(object) {
+
+    ###### 1. Extract Outcome and Weights ####
+
+    y = stats::model.response(object$model)
+    w = object$weights
+
+    ###### 2. Calculate Weighted Category Counts ####
+
+    counts = as.numeric(
+        rowsum(
+            w,
+            group = as.integer(y),
+            reorder = TRUE
+        )
+    )
+
+    counts = counts[counts > 0]
+
+    if (length(counts) < 2L) {
+        return(NA_real_)
+    }
+
+    ###### 3. Calculate Null Log-Likelihood ####
+
+    probabilities = counts / sum(counts)
+
+    null_loglik = sum(
+        counts * log(probabilities)
+    )
+
+    ###### 4. Calculate McFadden Pseudo-R-Squared ####
+
+    fitted_loglik = as.numeric(stats::logLik(object))
+
+    if (!is.finite(fitted_loglik) ||
+        !is.finite(null_loglik) ||
+        null_loglik >= 0) {
+        return(NA_real_)
+    }
+
+    1 - fitted_loglik / null_loglik
+}
 
 ###### 4. Ordered Model Summary ####
 
@@ -565,6 +608,7 @@ summary.econ_ordered = function(
         inference_df = df,
         residual.deviance = object$deviance,
         AIC = object$deviance + 2 * length(estimate),
+        pseudo.r.squared = .econ_ordered_pseudo_r2(object),
         df.residual = object$df.residual,
         extra.significance = extra.significance,
         exponentiate = exponentiate
@@ -734,6 +778,16 @@ p_values = coef_table[, p_value_column]
     )
 
     invisible(x)
+
+    ###### 8. Print McFadden Pseudo-R-Squared ####
+
+    cat(
+        "McFadden pseudo-R-squared: ",
+        sprintf("%.5f", x$pseudo.r.squared),
+        "\n",
+        sep = ""
+    )
+
 }
 
 
@@ -1484,4 +1538,27 @@ residuals.econ_ordered = function(
     sqrt(pmax(variance, .Machine$double.eps))
 
 stats::naresid(object$na.action, pearson_residuals)
+}
+
+
+#### 12. Ordered Model Glance Method ####
+
+#' @export
+glance.econ_ordered = function(x, ...) {
+
+    ###### 1. Obtain Standard Ordered Model Statistics ####
+
+    result = utils::getS3method(
+        "glance",
+        "polr"
+    )(x, ...)
+
+    ###### 2. Add McFadden Pseudo-R-Squared ####
+
+    result$pseudo.r.squared =
+        .econ_ordered_pseudo_r2(x)
+
+    ###### 3. Return Model Statistics ####
+
+    result
 }

@@ -1018,10 +1018,25 @@ testthat::test_that("Ordered reporting and prediction methods are consistent", {
             predict(ref, type = "class")
         )
 
-        testthat::expect_equal(
-            broom::glance(econ),
-            broom::glance(ref)
-        )
+        ###### Compare Standard Goodness-of-Fit Statistics ####
+
+econ_glance = broom::glance(econ)
+ref_glance = broom::glance(ref)
+
+testthat::expect_equal(
+    econ_glance[, names(ref_glance), drop = FALSE],
+    ref_glance
+)
+
+###### Verify McFadden Pseudo-R-Squared ####
+
+testthat::expect_true(
+    "pseudo.r.squared" %in% names(econ_glance)
+)
+
+testthat::expect_true(
+    is.finite(econ_glance$pseudo.r.squared)
+)
     }
 })
 
@@ -2717,3 +2732,150 @@ testthat::test_that("Ordered Logit exponentiation is correct", {
         "only supported for ordered Logit"
     )
 })
+
+
+#### 22. McFadden Pseudo-R-Squared ####
+
+testthat::test_that(
+    "Ordered McFadden pseudo-R-squared matches null likelihood",
+    {
+
+        set.seed(2026)
+
+        n = 1000
+
+        df = data.frame(
+            x1 = rnorm(n),
+            x2 = rnorm(n)
+        )
+
+        latent = 0.8 * df$x1 -
+            0.5 * df$x2 +
+            rlogis(n)
+
+        df$y = ordered(
+            cut(
+                latent,
+                breaks = c(-Inf, -0.5, 0.8, Inf),
+                labels = c("Low", "Medium", "High")
+            )
+        )
+
+        for (link in c("logit", "probit")) {
+
+            ###### 1. Estimate Full Model ####
+
+            econ = econ_ordered(
+                y ~ x1 + x2,
+                data = df,
+                link = link
+            )
+
+            ###### 2. Calculate Null Likelihood ####
+
+            counts = as.numeric(table(df$y))
+
+            probabilities = counts / sum(counts)
+
+            null_loglik = sum(
+                counts * log(probabilities)
+            )
+
+            expected = 1 -
+                as.numeric(logLik(econ)) / null_loglik
+
+            ###### 3. Check Summary ####
+
+            testthat::expect_equal(
+                summary(econ)$pseudo.r.squared,
+                expected,
+                tolerance = 1e-10
+            )
+
+            ###### 4. Check Glance ####
+
+            testthat::expect_equal(
+                broom::glance(econ)$pseudo.r.squared,
+                expected,
+                tolerance = 1e-10
+            )
+
+            ###### 5. Check Printed Summary ####
+
+            testthat::expect_output(
+                print(summary(econ)),
+                "McFadden pseudo-R-squared"
+            )
+        }
+    }
+)
+
+
+#### 23. Weighted McFadden Pseudo-R-Squared ####
+
+testthat::test_that(
+    "Weighted ordered McFadden pseudo-R-squared is correct",
+    {
+
+        set.seed(2027)
+
+        n = 1000
+
+        df = data.frame(
+            x1 = rnorm(n),
+            x2 = rnorm(n),
+            w = sample(1:5, n, replace = TRUE)
+        )
+
+        latent = 0.8 * df$x1 -
+            0.5 * df$x2 +
+            rlogis(n)
+
+        df$y = ordered(
+            cut(
+                latent,
+                breaks = c(-Inf, -0.5, 0.8, Inf),
+                labels = c("Low", "Medium", "High")
+            )
+        )
+
+        for (link in c("logit", "probit")) {
+
+            econ = econ_ordered(
+                y ~ x1 + x2,
+                data = df,
+                weights = w,
+                link = link
+            )
+
+            counts = as.numeric(
+                tapply(
+                    df$w,
+                    df$y,
+                    sum
+                )
+            )
+
+            probabilities = counts / sum(counts)
+
+            null_loglik = sum(
+                counts * log(probabilities)
+            )
+
+            expected = 1 -
+                as.numeric(logLik(econ)) / null_loglik
+
+            testthat::expect_equal(
+                summary(econ)$pseudo.r.squared,
+                expected,
+                tolerance = 1e-10
+            )
+
+            testthat::expect_equal(
+                broom::glance(econ)$pseudo.r.squared,
+                expected,
+                tolerance = 1e-10
+            )
+        }
+    }
+)
