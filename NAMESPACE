@@ -78,3 +78,20 @@ S3method(confint,econ_ordered)
 S3method(anova,econ_ordered)
 S3method(augment,econ_ordered)
 S3method(residuals,econ_ordered)
+
+# Multinomial
+
+
+
+S3method(summary,econ_multinomial)
+S3method(print,summary.econ_multinomial)
+S3method(coef,econ_multinomial)
+S3method(vcov,econ_multinomial)
+S3method(predict,econ_multinomial)
+S3method(nobs,econ_multinomial)
+S3method(logLik,econ_multinomial)
+S3method(augment,econ_multinomial)
+S3method(glance,econ_multinomial)
+S3method(tidy,econ_multinomial)
+S3method(fitted,econ_multinomial)
+S3method(confint,econ_multinomial)

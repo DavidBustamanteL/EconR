@@ -6,5 +6,6 @@
 ^wage1\.csv$
 ^testing_binary\.R$
 ^testing_ordered\.R$
+^testing_multinomial\.R$
 
 ^CITATION\.cff$
