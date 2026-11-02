@@ -789,20 +789,21 @@ predict.econ_multinomial = function(
         )
 
         if (any(complete)) {
-
+            
             eta = cbind(
                 0,
                 X_new[complete, , drop = FALSE] %*%
                     t(object$coefficients)
             )
-
+            
             colnames(eta) = object$lev
-
+            
             P[complete, ] =
-                .econ_multinomial_probit_probs_general(
-                    eta = eta,
-                    Omega = object$Omega
-                )
+                .econ_multinomial_probit_probs_general(        
+            eta = eta,
+            Omega = object$Omega,
+            normalize = TRUE
+        )
         }
     }
 
@@ -1114,40 +1115,45 @@ marginal_effects.econ_multinomial = function(
 
     rownames(labels) = NULL
 
-    ###### 6. Compute effects from coefficients ####
+###### 6. Compute effects from coefficients ####
 
-    probabilities = function(X_new, B_current, theta_current) {
+probabilities = function(
+    X_new,
+    B_current,
+    theta_current
+) {
 
-        eta = X_new %*% t(B_current)
+    eta = X_new %*% t(B_current)
 
-        if (identical(object$link, "probit")) {
+    if (identical(object$link, "probit")) {
 
-            return(
-                .econ_multinomial_probit_probs_general(
-                    eta = eta,
-                    Omega = if (length(gamma) > 0L) {
-                        .econ_multinomial_probit_omega(
-                            theta_current[names(gamma)],
-                            length(outcomes) - 1L
-                        )
-                    } else {
-                        object$Omega
-                    }
-                )
+        return(
+            .econ_multinomial_probit_probs_general(
+                eta = eta,
+                normalize = TRUE,
+                Omega = if (length(gamma) > 0L) {
+                    .econ_multinomial_probit_omega(
+                        theta_current[names(gamma)],
+                        length(outcomes) - 1L
+                    )
+                } else {
+                    object$Omega
+                }
             )
-        }
-
-        eta = sweep(
-            eta,
-            1L,
-            apply(eta, 1L, max),
-            "-"
         )
-
-        exp_eta = exp(eta)
-
-        exp_eta / rowSums(exp_eta)
     }
+
+    eta = sweep(
+        eta,
+        1L,
+        apply(eta, 1L, max),
+        "-"
+    )
+
+    exp_eta = exp(eta)
+
+    exp_eta / rowSums(exp_eta)
+}
 
 
     calculate_ame = function(theta_current) {
@@ -2041,7 +2047,12 @@ tidy.econ_multinomial = function(
 
 ###### 11.1. Generalized Choice Probabilities ####
 
-.econ_multinomial_probit_probs_general = function(eta, Omega) {
+.econ_multinomial_probit_probs_general = function(
+    eta,
+    Omega,
+    observed = NULL,
+    normalize = FALSE
+) {
 
     eta = as.matrix(eta)
     Omega = as.matrix(Omega)
@@ -2074,6 +2085,30 @@ tidy.econ_multinomial = function(
         )
     }
 
+    if (!is.null(observed)) {
+
+        if (length(observed) != nrow(eta) ||
+            anyNA(observed) ||
+            any(!(observed %in% seq_len(J)))) {
+            stop(
+                "Invalid observed choice indices.",
+                call. = FALSE
+            )
+        }
+
+        observed = as.integer(observed)
+    }
+
+    if (!is.logical(normalize) ||
+        length(normalize) != 1L ||
+        is.na(normalize) ||
+        (normalize && !is.null(observed))) {
+        stop(
+            "Invalid probability normalization request.",
+            call. = FALSE
+        )
+    }
+
     ###### 1. Construct normalized utility covariance ####
 
     Sigma = matrix(0, J, J)
@@ -2086,6 +2121,10 @@ tidy.econ_multinomial = function(
         dimnames = list(NULL, colnames(eta))
     )
 
+    if (!is.null(observed)) {
+        result = numeric(nrow(eta))
+    }
+
     ###### 2. Calculate category probabilities ####
 
     for (j in seq_len(J)) {
@@ -2095,17 +2134,24 @@ tidy.econ_multinomial = function(
         D = matrix(0, M, J)
 
         for (k in seq_along(others)) {
+
             D[k, others[k]] = 1
             D[k, j] = -1
         }
 
         Sigma_j = D %*% Sigma %*% t(D)
 
-        for (i in seq_len(nrow(eta))) {
+        rows = if (is.null(observed)) {
+            seq_len(nrow(eta))
+        } else {
+            which(observed == j)
+        }
+
+        for (i in rows) {
 
             upper = eta[i, j] - eta[i, others]
 
-            P[i, j] = as.numeric(
+            value = as.numeric(
                 mvtnorm::pmvnorm(
                     lower = rep(-Inf, M),
                     upper = upper,
@@ -2114,7 +2160,34 @@ tidy.econ_multinomial = function(
                     algorithm = mvtnorm::Miwa()
                 )
             )
+
+            if (is.null(observed)) {
+                P[i, j] = value
+            } else {
+                result[i] = value
+            }
         }
+    }
+
+    ###### 3. Return observed or complete probabilities ####
+
+    if (!is.null(observed)) {
+        return(result)
+    }
+
+    if (normalize) {
+
+        totals = rowSums(P)
+
+        if (any(!is.finite(totals)) ||
+            any(totals <= 0)) {
+            stop(
+                "Invalid multinomial probit probability totals.",
+                call. = FALSE
+            )
+        }
+
+        P = P / totals
     }
 
     P
@@ -2245,7 +2318,10 @@ tidy.econ_multinomial = function(
         nrow(X) < 1L ||
         ncol(X) < 1L ||
         any(!is.finite(X))) {
-        stop("'X' must be a finite numeric model matrix.", call. = FALSE)
+        stop(
+            "'X' must be a finite numeric model matrix.",
+            call. = FALSE
+        )
     }
 
     if (!is.factor(y) ||
@@ -2253,7 +2329,10 @@ tidy.econ_multinomial = function(
         nlevels(y) < 3L ||
         length(y) != nrow(X) ||
         anyNA(y) ||
-        any(tabulate(as.integer(y), nbins = nlevels(y)) == 0L)) {
+        any(tabulate(
+            as.integer(y),
+            nbins = nlevels(y)
+        ) == 0L)) {
         stop(
             "'y' must be an unordered factor with at least three observed categories.",
             call. = FALSE
@@ -2270,7 +2349,10 @@ tidy.econ_multinomial = function(
         any(!is.finite(weights)) ||
         any(weights < 0) ||
         sum(weights) <= 0) {
-        stop("Invalid observation weights.", call. = FALSE)
+        stop(
+            "Invalid observation weights.",
+            call. = FALSE
+        )
     }
 
     ###### 2. Identification and parameter setup ####
@@ -2382,7 +2464,11 @@ tidy.econ_multinomial = function(
         )
     }
 
-    probability_function = function(theta) {
+    probability_function = function(
+        theta,
+        observed = NULL,
+        normalize = FALSE
+    ) {
 
         beta = theta[seq_len(n_beta)]
 
@@ -2399,7 +2485,9 @@ tidy.econ_multinomial = function(
 
         .econ_multinomial_probit_probs_general(
             eta = eta,
-            Omega = Omega
+            Omega = Omega,
+            observed = observed,
+            normalize = normalize
         )
     }
 
@@ -2412,16 +2500,17 @@ tidy.econ_multinomial = function(
 
     negative_loglik = function(theta) {
 
-        P = tryCatch(
-            probability_function(theta),
+        observed = tryCatch(
+            probability_function(
+                theta,
+                observed = as.integer(y)
+            ),
             error = function(e) NULL
         )
 
-        if (is.null(P)) {
+        if (is.null(observed)) {
             return(.Machine$double.xmax / 100)
         }
-
-        observed = P[outcome_index]
 
         if (any(!is.finite(observed)) ||
             any(observed < 0)) {
@@ -2477,7 +2566,10 @@ tidy.econ_multinomial = function(
     )
 
     if (any(!is.finite(hessian)) ||
-        min(eigen(hessian, symmetric = TRUE)$values) <= 0) {
+        min(eigen(
+            hessian,
+            symmetric = TRUE
+        )$values) <= 0) {
         stop(
             "Multinomial probit Hessian is not positive definite.",
             call. = FALSE
@@ -2509,7 +2601,8 @@ tidy.econ_multinomial = function(
     Omega = get_omega(theta_hat)
 
     fitted_probabilities = probability_function(
-        theta_hat
+        theta_hat,
+        normalize = TRUE
     )
 
     names(gamma_hat) = cov_names
@@ -2536,69 +2629,171 @@ tidy.econ_multinomial = function(
 ###### 12.1. Observation-Level Score Contributions ####
 
 .econ_multinomial_probit_scores = function(
-    fit, X, y, weights = NULL, step = 1e-5
+    fit,
+    X,
+    y,
+    weights = NULL,
+    step = 1e-5
 ) {
+
     X = as.matrix(X)
-    if (!is.numeric(X) || any(!is.finite(X)) ||
-        !is.factor(y) || is.ordered(y) ||
-        nrow(X) != length(y) || anyNA(y) ||
-        !identical(levels(y), colnames(fit$fitted.values))) {
-        stop("Invalid or misaligned score inputs.", call. = FALSE)
+
+    if (!is.numeric(X) ||
+        any(!is.finite(X)) ||
+        !is.factor(y) ||
+        is.ordered(y) ||
+        nrow(X) != length(y) ||
+        anyNA(y) ||
+        !identical(
+            levels(y),
+            colnames(fit$fitted.values)
+        )) {
+        stop(
+            "Invalid or misaligned score inputs.",
+            call. = FALSE
+        )
     }
+
     n = nrow(X)
     K = ncol(X)
     M = nlevels(y) - 1L
-    if (is.null(weights)) weights = fit$weights
-    if (!is.numeric(weights) || length(weights) != n ||
-        anyNA(weights) || any(!is.finite(weights)) || any(weights < 0)) {
-        stop("Invalid score weights.", call. = FALSE)
+
+    if (is.null(weights)) {
+        weights = fit$weights
     }
-    if (!is.numeric(step) || length(step) != 1L ||
-        !is.finite(step) || step <= 0) {
-        stop("'step' must be positive and finite.", call. = FALSE)
+
+    if (!is.numeric(weights) ||
+        length(weights) != n ||
+        anyNA(weights) ||
+        any(!is.finite(weights)) ||
+        any(weights < 0)) {
+        stop(
+            "Invalid score weights.",
+            call. = FALSE
+        )
+    }
+
+    if (!is.numeric(step) ||
+        length(step) != 1L ||
+        !is.finite(step) ||
+        step <= 0) {
+        stop(
+            "'step' must be positive and finite.",
+            call. = FALSE
+        )
     }
 
     ###### 1. Joint parameter vector ####
+
     n_beta = M * K
-    beta = as.vector(t(fit$coefficients))
-    estimated = identical(fit$error_covariance, "estimated")
-    gamma = if (estimated) fit$covariance_parameters else numeric(0)
-    theta = c(beta, gamma)
-    if (length(beta) != n_beta || length(theta) != ncol(fit$vcov)) {
-        stop("Probit parameter and covariance dimensions do not match.", call. = FALSE)
+
+    beta = as.vector(
+        t(fit$coefficients)
+    )
+
+    estimated = identical(
+        fit$error_covariance,
+        "estimated"
+    )
+
+    gamma = if (estimated) {
+        fit$covariance_parameters
+    } else {
+        numeric(0)
     }
+
+    theta = c(beta, gamma)
+
+    if (length(beta) != n_beta ||
+        length(theta) != ncol(fit$vcov)) {
+        stop(
+            "Probit parameter and covariance dimensions do not match.",
+            call. = FALSE
+        )
+    }
+
     names(theta) = colnames(fit$vcov)
-    outcome_index = cbind(seq_len(n), as.integer(y))
 
     ###### 2. Individual log-likelihood ####
+
     individual_loglik = function(par) {
-        B = matrix(par[seq_len(n_beta)], nrow = M, ncol = K, byrow = TRUE)
-        eta = cbind(0, X %*% t(B))
+
+        B = matrix(
+            par[seq_len(n_beta)],
+            nrow = M,
+            ncol = K,
+            byrow = TRUE
+        )
+
+        eta = cbind(
+            0,
+            X %*% t(B)
+        )
+
         colnames(eta) = levels(y)
+
         Omega = if (estimated) {
-            .econ_multinomial_probit_omega(par[-seq_len(n_beta)], M)
+            .econ_multinomial_probit_omega(
+                par[-seq_len(n_beta)],
+                M
+            )
         } else {
             fit$Omega
         }
-        P = .econ_multinomial_probit_probs_general(eta, Omega)
-        log(pmax(P[outcome_index], .Machine$double.xmin))
+
+        observed_prob = .econ_multinomial_probit_probs_general(
+            eta = eta,
+            Omega = Omega,
+            observed = as.integer(y)
+        )
+
+        log(
+            pmax(
+                observed_prob,
+                .Machine$double.xmin
+            )
+        )
     }
 
     ###### 3. Numerical score contributions ####
-    S = matrix(NA_real_, nrow = n, ncol = length(theta),
-               dimnames = list(NULL, names(theta)))
+
+    S = matrix(
+        NA_real_,
+        nrow = n,
+        ncol = length(theta),
+        dimnames = list(
+            NULL,
+            names(theta)
+        )
+    )
+
     for (j in seq_along(theta)) {
-        h = step * max(1, abs(theta[j]))
+
+        h = step * max(
+            1,
+            abs(theta[j])
+        )
+
         plus = theta
         minus = theta
+
         plus[j] = plus[j] + h
         minus[j] = minus[j] - h
-        S[, j] = weights * (individual_loglik(plus) -
-                           individual_loglik(minus)) / (2 * h)
+
+        S[, j] = weights *
+            (
+                individual_loglik(plus) -
+                individual_loglik(minus)
+            ) / (2 * h)
     }
+
     if (any(!is.finite(S))) {
-        stop("Nonfinite probit score contributions.", call. = FALSE)
+        stop(
+            "Nonfinite probit score contributions.",
+            call. = FALSE
+        )
     }
+
     S
 }
 
@@ -2613,7 +2808,8 @@ tidy.econ_multinomial = function(
         "CR0", "CR1", "CR1p", "CR1S", "stata"
     ),
     cluster = NULL,
-    weights = NULL
+    weights = NULL,
+    scores = NULL
 ) {
 
     vcov = match.arg(vcov)
@@ -2624,14 +2820,37 @@ tidy.econ_multinomial = function(
         return(V)
     }
 
-    ###### 1. Obtain score contributions ####
+    ###### 1. Obtain or reuse score contributions ####
 
-    S = .econ_multinomial_probit_scores(
-        fit = fit,
-        X = X,
-        y = y,
-        weights = weights
-    )
+    if (is.null(scores)) {
+
+        S = .econ_multinomial_probit_scores(
+            fit = fit,
+            X = X,
+            y = y,
+            weights = weights
+        )
+
+    } else {
+
+        S = as.matrix(scores)
+
+        if (!is.null(weights)) {
+            stop(
+                "Supply either precomputed scores or weights, not both.",
+                call. = FALSE
+            )
+        }
+
+        if (!is.numeric(S) ||
+            !identical(dim(S), c(nrow(X), ncol(V))) ||
+            any(!is.finite(S))) {
+            stop(
+                "Invalid precomputed probit scores.",
+                call. = FALSE
+            )
+        }
+    }
 
     if (!identical(colnames(S), colnames(V))) {
         stop(
@@ -2790,34 +3009,35 @@ tidy.econ_multinomial = function(
 
     ###### 2. Prediction function ####
 
-    probabilities = function(par, X_new) {
+probabilities = function(par, X_new) {
 
-        B = matrix(
-            par[seq_along(beta)],
-            nrow = nrow(C),
-            ncol = ncol(C),
-            byrow = TRUE
-        )
+    B = matrix(
+        par[seq_along(beta)],
+        nrow = nrow(C),
+        ncol = ncol(C),
+        byrow = TRUE
+    )
 
-        eta = cbind(
-            0,
-            X_new %*% t(B)
-        )
+    eta = cbind(
+        0,
+        X_new %*% t(B)
+    )
 
-        colnames(eta) = object$lev
+    colnames(eta) = object$lev
 
-        .econ_multinomial_probit_probs_general(
-            eta = eta,
-            Omega = if (length(gamma) > 0L) {
-                .econ_multinomial_probit_omega(
-                    par[names(gamma)],
-                    nrow(C)
-                )
-            } else {
-                object$Omega
-            }
-        )
-    }
+    .econ_multinomial_probit_probs_general(
+        eta = eta,
+        normalize = TRUE,
+        Omega = if (length(gamma) > 0L) {
+            .econ_multinomial_probit_omega(
+                par[names(gamma)],
+                nrow(C)
+            )
+        } else {
+            object$Omega
+        }
+    )
+}
 
     ###### 3. Initialize standard errors ####
 

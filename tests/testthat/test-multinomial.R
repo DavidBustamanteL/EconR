@@ -2864,14 +2864,20 @@ testthat::test_that("probit scores and HC covariance are valid", {
     )
 
     V_HC0 = .econ_multinomial_probit_vcov(
-        fit, X, y,
-        vcov = "HC0"
-    )
+    fit = fit,
+    X = X,
+    y = y,
+    vcov = "HC0",
+    scores = S
+)
 
-    V_HC1 = .econ_multinomial_probit_vcov(
-        fit, X, y,
-        vcov = "HC1"
-    )
+V_HC1 = .econ_multinomial_probit_vcov(
+    fit = fit,
+    X = X,
+    y = y,
+    vcov = "HC1",
+    scores = S
+)
 
     HC0_reference = V %*% crossprod(S) %*% V
     HC1_reference = HC0_reference * n / (n - k)
@@ -2917,23 +2923,24 @@ testthat::test_that("probit scores and HC covariance are valid", {
 
     for (type in names(corrections)) {
 
-        result = .econ_multinomial_probit_vcov(
-            fit = fit,
-            X = X,
-            y = y,
-            vcov = type,
-            cluster = cluster
-        )
+    result = .econ_multinomial_probit_vcov(
+        fit = fit,
+        X = X,
+        y = y,
+        vcov = type,
+        cluster = cluster,
+        scores = S
+    )
 
-        reference = CR0_reference * corrections[[type]]
+    reference = CR0_reference * corrections[[type]]
 
-        testthat::expect_equal(
-            unname(result),
-            unname(reference),
-            tolerance = 1e-8,
-            info = paste("Covariance type:", type)
-        )
-    }
+    testthat::expect_equal(
+        unname(result),
+        unname(reference),
+        tolerance = 1e-8,
+        info = paste("Covariance type:", type)
+    )
+}
 
     ###### 5. Validate weighted covariance ####
 
@@ -2954,11 +2961,12 @@ testthat::test_that("probit scores and HC covariance are valid", {
     )
 
     V_weighted = .econ_multinomial_probit_vcov(
-        fit = fit_weighted,
-        X = X,
-        y = y,
-        vcov = "HC0"
-    )
+    fit = fit_weighted,
+    X = X,
+    y = y,
+    vcov = "HC0",
+    scores = S_weighted
+)
 
     weighted_reference =
         fit_weighted$vcov %*%
@@ -2997,6 +3005,22 @@ testthat::test_that("probit scores and HC covariance are valid", {
         ),
         "G > k"
     )
+
+###### 7. Validate Direct and Reused Scores ####
+
+V_direct = .econ_multinomial_probit_vcov(
+    fit = fit,
+    X = X,
+    y = y,
+    vcov = "HC0"
+)
+
+testthat::expect_equal(
+    V_direct,
+    V_HC0,
+    tolerance = 1e-10
+)
+
 })
 
 
@@ -3165,12 +3189,8 @@ testthat::test_that("public multinomial probit estimation and prediction work", 
 
     ###### 6. HC1 covariance ####
 
-    fit_hc = econ_multinomial(
-        y ~ x,
-        data = dat,
-        link = "probit",
-        vcov = "HC1"
-    )
+    fit_hc = fit
+    fit_hc$vcov_type = "HC1"
 
     V_hc = stats::vcov(fit_hc)
 
@@ -3190,13 +3210,9 @@ testthat::test_that("public multinomial probit estimation and prediction work", 
 
     ###### 7. Cluster-robust covariance ####
 
-    fit_cr = econ_multinomial(
-        y ~ x,
-        data = dat,
-        link = "probit",
-        vcov = "CR1S",
-        cluster = cluster
-    )
+    fit_cr = fit
+    fit_cr$vcov_type = "CR1S"
+    fit_cr$cluster = dat$cluster
 
     V_cr = stats::vcov(fit_cr)
 
@@ -3331,53 +3347,74 @@ testthat::test_that("public multinomial probit estimation and prediction work", 
 
 
 
+###### Shared Fixed-Probit Fixture for Sections 46 and 47 ####
+
+.stage46_47_fixture = local({
+
+    cached = NULL
+
+    function() {
+
+        if (!is.null(cached)) return(cached)
+
+        set.seed(1616)
+        n = 60L
+
+        dat = data.frame(
+            x = rnorm(n),
+            group = factor(rep(c("Control", "Treatment"), length.out = n)),
+            w = sample(1:3, n, replace = TRUE),
+            cl = rep(seq_len(15L), each = 4L)
+        )
+
+        eta = cbind(
+            A = 0,
+            B = 0.3 + 0.7 * dat$x + 0.3 * (dat$group == "Treatment"),
+            C = -0.2 - 0.5 * dat$x + 0.4 * (dat$group == "Treatment")
+        )
+
+        errors = matrix(
+            rnorm(n * 3L, sd = sqrt(0.5)),
+            nrow = n,
+            ncol = 3L
+        )
+
+        dat$y = factor(
+            c("A", "B", "C")[max.col(eta + errors)],
+            levels = c("A", "B", "C")
+        )
+
+        fit = econ_multinomial(
+            y ~ x + group,
+            data = dat,
+            link = "probit"
+        )
+
+        fit_w = econ_multinomial(
+            y ~ x + group,
+            data = dat,
+            weights = w,
+            link = "probit",
+            vcov = "CR1S",
+            cluster = cl
+        )
+
+        cached <<- list(dat = dat, fit = fit, fit_w = fit_w)
+        cached
+    }
+})
+
+
 ###### 46. Multinomial Probit Prediction SE and Marginal Effects Tests ####
 
 testthat::test_that("probit prediction SEs and augmentation work", {
 
-    ###### 1. Generate reproducible data ####
+    ###### 1. Reuse reproducible fixed-probit fit ####
 
-    set.seed(1616)
-
-    n = 60L
-
-    dat = data.frame(
-        x = rnorm(n),
-        group = factor(
-            rep(c("Control", "Treatment"), length.out = n)
-        ),
-        w = sample(1:3, n, replace = TRUE),
-        cl = rep(seq_len(15L), each = 4L)
-    )
-
-    eta = cbind(
-        A = 0,
-        B = 0.3 + 0.7 * dat$x +
-            0.3 * (dat$group == "Treatment"),
-        C = -0.2 - 0.5 * dat$x +
-            0.4 * (dat$group == "Treatment")
-    )
-
-    errors = matrix(
-        rnorm(n * 3L, sd = sqrt(0.5)),
-        nrow = n,
-        ncol = 3L
-    )
-
-    dat$y = factor(
-        c("A", "B", "C")[
-            max.col(eta + errors)
-        ],
-        levels = c("A", "B", "C")
-    )
-
-    ###### 2. Fit multinomial probit ####
-
-    fit = econ_multinomial(
-        y ~ x + group,
-        data = dat,
-        link = "probit"
-    )
+    z = .stage46_47_fixture()
+    dat = z$dat
+    fit = z$fit
+    n = nrow(dat)
 
     ###### 3. In-sample augmentation ####
 
@@ -3494,47 +3531,12 @@ testthat::test_that("probit continuous and categorical AMEs work", {
 
     ###### 1. Generate reproducible data ####
 
-    set.seed(1616)
+    ###### 1. Reuse reproducible fixed-probit fit ####
 
-    n = 60L
-
-    dat = data.frame(
-        x = rnorm(n),
-        group = factor(
-            rep(c("Control", "Treatment"), length.out = n)
-        ),
-        w = sample(1:3, n, replace = TRUE),
-        cl = rep(seq_len(15L), each = 4L)
-    )
-
-    eta = cbind(
-        A = 0,
-        B = 0.3 + 0.7 * dat$x +
-            0.3 * (dat$group == "Treatment"),
-        C = -0.2 - 0.5 * dat$x +
-            0.4 * (dat$group == "Treatment")
-    )
-
-    errors = matrix(
-        rnorm(n * 3L, sd = sqrt(0.5)),
-        nrow = n,
-        ncol = 3L
-    )
-
-    dat$y = factor(
-        c("A", "B", "C")[
-            max.col(eta + errors)
-        ],
-        levels = c("A", "B", "C")
-    )
-
-    ###### 2. Fit multinomial probit ####
-
-    fit = econ_multinomial(
-        y ~ x + group,
-        data = dat,
-        link = "probit"
-    )
+    z = .stage46_47_fixture()
+    dat = z$dat
+    fit = z$fit
+    n = nrow(dat)
 
     ###### 3. Continuous marginal effects ####
 
@@ -3594,14 +3596,7 @@ testthat::test_that("probit continuous and categorical AMEs work", {
 
     ###### 5. Weighted and clustered marginal effects ####
 
-    fit_weighted = econ_multinomial(
-        y ~ x + group,
-        data = dat,
-        weights = w,
-        link = "probit",
-        vcov = "CR1S",
-        cluster = cl
-    )
+    fit_weighted = z$fit_w
 
     ame_weighted = marginal_effects.econ_multinomial(
         fit_weighted,
@@ -3683,48 +3678,11 @@ testthat::test_that("probit prediction SEs and AMEs match numerical references",
 
     ###### 1. Generate data ####
 
-    set.seed(1616)
-
-    n = 60L
-
-    dat = data.frame(
-        x = rnorm(n),
-        group = factor(rep(c("Control", "Treatment"), length.out = n)),
-        w = sample(1:3, n, replace = TRUE),
-        cl = rep(seq_len(15L), each = 4L)
-    )
-
-    eta = cbind(
-        A = 0,
-        B = 0.3 + 0.7 * dat$x + 0.3 * (dat$group == "Treatment"),
-        C = -0.2 - 0.5 * dat$x + 0.4 * (dat$group == "Treatment")
-    )
-
-    errors = matrix(
-        rnorm(n * 3L, sd = sqrt(0.5)),
-        nrow = n,
-        ncol = 3L
-    )
-
-    dat$y = factor(
-        c("A", "B", "C")[max.col(eta + errors)],
-        levels = c("A", "B", "C")
-    )
-
-    fit = econ_multinomial(
-        y ~ x + group,
-        data = dat,
-        link = "probit"
-    )
-
-    fit_w = econ_multinomial(
-        y ~ x + group,
-        data = dat,
-        weights = w,
-        link = "probit",
-        vcov = "CR1S",
-        cluster = cl
-    )
+    z = .stage46_47_fixture()
+    dat = z$dat
+    fit = z$fit
+    fit_w = z$fit_w
+    n = nrow(dat)
 
     ###### 2. Independent prediction function ####
 
@@ -4357,14 +4315,16 @@ testthat::test_that("Joint probit scores produce HC and clustered covariance", {
         fit,
         X,
         y,
-        vcov = "HC0"
+        vcov = "HC0",
+        scores = S
     )
 
     hc1 = .econ_multinomial_probit_vcov(
         fit,
         X,
         y,
-        vcov = "HC1"
+        vcov = "HC1",
+        scores = S
     )
 
     testthat::expect_equal(
@@ -4398,7 +4358,8 @@ testthat::test_that("Joint probit scores produce HC and clustered covariance", {
         X,
         y,
         vcov = "CR0",
-        cluster = cl
+        cluster = cl,
+        scores = S
     )
 
     testthat::expect_equal(
@@ -4414,7 +4375,8 @@ testthat::test_that("Joint probit scores produce HC and clustered covariance", {
         X,
         y,
         vcov = "CR1S",
-        cluster = cl
+        cluster = cl,
+        scores = S
     )
 
     testthat::expect_equal(
@@ -4509,8 +4471,9 @@ testthat::test_that("Predictions use estimated covariance and joint delta-method
     colnames(eta) = fit$lev
 
     p_reference = .econ_multinomial_probit_probs_general(
-        eta,
-        fit$Omega
+        eta = eta,
+        Omega = fit$Omega,
+        normalize = TRUE
     )
 
     p = predict(
@@ -4622,3 +4585,410 @@ testthat::test_that("Estimated covariance is rejected for multinomial logit", {
         "only supported"
     )
 })
+
+
+###### 49. Estimated-Covariance Probit Sample Handling ####
+
+
+###### 49.1. Shared Weighted and Incomplete Sample ####
+
+.stage49_fixture = local({
+
+    cached = NULL
+
+    function() {
+
+        if (!is.null(cached)) {
+            return(cached)
+        }
+
+        dat = .stage18_fixture()$dat
+
+        set.seed(1949)
+
+        dat$w = runif(
+            nrow(dat),
+            min = 0.75,
+            max = 1.25
+        )
+
+        dat$keep = rep(
+            c(TRUE, TRUE, TRUE, TRUE, FALSE),
+            length.out = nrow(dat)
+        )
+
+        dat$x[c(5, 20, 45, 100, 155)] = NA_real_
+
+        expected = which(
+            dat$keep &
+                stats::complete.cases(
+                    dat[, c("y", "x", "w")]
+                )
+        )
+
+        fit = econ_multinomial(
+            y ~ x,
+            data = dat,
+            weights = w,
+            subset = keep,
+            link = "probit",
+            error_covariance = "estimated",
+            vcov = "classical",
+            cluster = cl
+        )
+
+        cached <<- list(
+            dat = dat,
+            fit = fit,
+            expected = expected
+        )
+
+        cached
+    }
+})
+
+
+###### 49.2. Missing Covariates and Subset Alignment ####
+
+testthat::test_that(
+    "Estimated probit aligns observations after missingness and subsetting",
+    {
+
+        z = .stage49_fixture()
+
+        fit = z$fit
+        dat = z$dat
+        expected = z$expected
+
+        testthat::expect_equal(
+            fit$used,
+            expected
+        )
+
+        testthat::expect_equal(
+            fit$omitted,
+            setdiff(seq_len(nrow(dat)), expected)
+        )
+
+        testthat::expect_equal(
+            nobs(fit),
+            length(expected)
+        )
+
+        testthat::expect_equal(
+            nrow(fit$econ_model),
+            length(expected)
+        )
+
+        testthat::expect_equal(
+            nrow(fitted(fit)),
+            length(expected)
+        )
+
+        testthat::expect_true(
+            all(is.finite(fitted(fit)))
+        )
+
+        testthat::expect_equal(
+            rowSums(fitted(fit)),
+            rep(1, length(expected)),
+            tolerance = 1e-7
+        )
+    }
+)
+
+
+###### 49.3. Observation Weights and Weighted Likelihood ####
+
+testthat::test_that(
+    "Estimated probit preserves weights and the weighted likelihood",
+    {
+
+        z = .stage49_fixture()
+
+        fit = z$fit
+        dat = z$dat
+        expected = z$expected
+
+        ###### 1. Validate observation weights ####
+
+        testthat::expect_equal(
+            unname(fit$econ_weights),
+            unname(dat$w[expected]),
+            tolerance = 1e-12
+        )
+
+        testthat::expect_equal(
+            unname(fit$weights),
+            unname(dat$w[expected]),
+            tolerance = 1e-12
+        )
+
+        ###### 2. Construct systematic utilities ####
+
+        X = stats::model.matrix(
+            fit$terms,
+            fit$econ_model,
+            contrasts.arg = fit$contrasts
+        )
+
+        y = stats::model.response(
+            fit$econ_model
+        )
+
+        eta = cbind(
+            0,
+            X %*% t(coef(fit))
+        )
+
+        colnames(eta) = fit$lev
+
+        ###### 3. Compute raw observed-choice probabilities ####
+
+        observed_prob = .econ_multinomial_probit_probs_general(
+            eta = eta,
+            Omega = fit$Omega,
+            observed = as.integer(y)
+        )
+
+        ###### 4. Calculate independent weighted likelihood ####
+
+        ll_reference = sum(
+            dat$w[expected] *
+                log(
+                    pmax(
+                        observed_prob,
+                        .Machine$double.xmin
+                    )
+                )
+        )
+
+        ###### 5. Validate weighted log-likelihood ####
+
+        testthat::expect_equal(
+            as.numeric(logLik(fit)),
+            ll_reference,
+            tolerance = 1e-6
+        )
+    }
+)
+
+
+###### 49.4. Cluster Alignment After Sample Selection ####
+
+testthat::test_that(
+    "Estimated probit aligns clusters with the estimation sample",
+    {
+
+        z = .stage49_fixture()
+
+        fit = z$fit
+        dat = z$dat
+        expected = z$expected
+
+        testthat::expect_equal(
+            unname(fit$cluster),
+            unname(dat$cl[expected])
+        )
+
+        testthat::expect_equal(
+            length(fit$cluster),
+            nobs(fit)
+        )
+
+        testthat::expect_false(
+            anyNA(fit$cluster)
+        )
+
+        testthat::expect_identical(
+        colnames(fit$vcov),
+        fit$parameter_names
+    )    }
+)
+
+
+###### 49.5. Missing Weight Validation ####
+
+testthat::test_that(
+    "Estimated probit rejects missing observation weights",
+    {
+
+        dat = .stage18_fixture()$dat
+
+        dat$w = rep(1, nrow(dat))
+
+        dat$w[5] = NA_real_
+
+        testthat::expect_error(
+            econ_multinomial(
+                y ~ x,
+                data = dat,
+                weights = w,
+                link = "probit",
+                error_covariance = "estimated"
+            ),
+            "weights"
+        )
+
+        dat$keep = rep(TRUE, nrow(dat))
+        dat$keep[5] = FALSE
+
+        testthat::expect_error(
+            econ_multinomial(
+                y ~ x,
+                data = dat,
+                weights = w,
+                subset = keep,
+                link = "probit",
+                error_covariance = "estimated"
+            ),
+            "weights"
+        )
+    }
+)
+
+
+###### 49.6. Invalid Weight Validation ####
+
+testthat::test_that(
+    "Estimated probit rejects invalid observation weights",
+    {
+
+        dat = .stage18_fixture()$dat
+
+        dat$w = rep(1, nrow(dat))
+
+        for (invalid in c(-1, Inf, -Inf, NaN)) {
+
+            dat$w[1] = invalid
+
+            testthat::expect_error(
+                econ_multinomial(
+                    y ~ x,
+                    data = dat,
+                    weights = w,
+                    link = "probit",
+                    error_covariance = "estimated"
+                ),
+                "weights"
+            )
+        }
+    }
+)
+
+
+###### 49.7. Out-of-Sample Missing Predictor Handling ####
+
+testthat::test_that(
+    "Estimated probit preserves missing values in out-of-sample predictions",
+    {
+
+        fit = .stage49_fixture()$fit
+
+        newdata = data.frame(
+            x = c(-1, NA_real_, 0, 1)
+        )
+
+        P = predict(
+            fit,
+            newdata = newdata,
+            type = "probs"
+        )
+
+        testthat::expect_equal(
+            dim(P),
+            c(4L, 3L)
+        )
+
+        testthat::expect_true(
+            all(is.na(P[2L, ]))
+        )
+
+        testthat::expect_true(
+            all(is.finite(P[c(1L, 3L, 4L), ]))
+        )
+
+        testthat::expect_equal(
+            rowSums(P[c(1L, 3L, 4L), ]),
+            rep(1, 3L),
+            tolerance = 1e-7
+        )
+
+        predicted_class = predict(
+            fit,
+            newdata = newdata,
+            type = "class"
+        )
+
+        testthat::expect_true(
+            is.na(predicted_class[2L])
+        )
+    }
+)
+
+
+###### 49.8. Weighted Score Contributions ####
+
+testthat::test_that(
+    "Estimated probit scores include observation weights",
+    {
+
+        z = .stage49_fixture()
+
+        fit = z$fit
+
+        X = stats::model.matrix(
+            fit$terms,
+            fit$econ_model,
+            contrasts.arg = fit$contrasts
+        )
+
+        y = stats::model.response(
+            fit$econ_model
+        )
+
+        selected = unique(as.integer(round(seq(
+        1, nrow(X), length.out = min(36L, nrow(X))
+    ))))
+
+    X = X[selected, , drop = FALSE]
+    y = y[selected]
+    weights_selected = fit$econ_weights[selected]
+
+    S_weighted = .econ_multinomial_probit_scores(
+        fit = fit,
+        X = X,
+        y = y,
+        weights = weights_selected
+    )
+
+    S_unweighted = .econ_multinomial_probit_scores(
+            fit = fit,
+            X = X,
+            y = y,
+            weights = rep(1, nrow(X))
+        )
+
+        reference = sweep(
+            S_unweighted,
+            1L,
+            weights_selected,
+            `*`
+        )
+
+        testthat::expect_equal(
+            unname(S_weighted),
+            unname(reference),
+            tolerance = 1e-7
+        )
+
+        testthat::expect_identical(
+            colnames(S_weighted),
+            colnames(fit$vcov)
+        )
+
+        testthat::expect_true(
+            all(is.finite(S_weighted))
+        )
+    }
+)

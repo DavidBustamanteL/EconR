@@ -181,7 +181,7 @@ cbind(
 
 #### Dev Tool Testing ####
 devtools::load_all()
-devtools::test()
+devtools::test(filter = "multinomial")
 
 devtools::document()
 
