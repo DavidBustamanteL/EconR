@@ -1,188 +1,103 @@
 
 # EconR
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23547786.svg)](https://doi.org/10.5281/zenodo.23547786)
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23547787.svg)](https://doi.org/10.5281/zenodo.23547787)
+`EconR` is an R package for econometric estimation with a consistent model interface, model-specific missing-data handling, and flexible covariance estimation.
 
+It combines familiar R formula syntax with standardized inference, prediction, and reporting across linear, binary, ordered, and multinomial regression models.
 
-`EconR` is a developing R package for econometric estimation with a consistent interface and model-specific missing-data handling.
+**Current version: 0.1.5**
 
-The package aims to provide a unified framework for econometric models while preserving familiar R formula syntax and compatibility with established R infrastructure.
+## 1. Supported Models
 
-## Current Version
+| Function | Model | Estimation |
+|---|---|---|
+| `econ_lm()` | Linear regression | OLS and WLS |
+| `econ_binary()` | Binary Logit and Probit | Maximum likelihood |
+| `econ_ordered()` | Ordered Logit and Probit | Maximum likelihood |
+| `econ_multinomial()` | Multinomial Logit and Probit | Maximum likelihood |
 
-**EconR 0.1.4**
+All models support observation weights, subsetting, and model-specific missing-data handling.
 
-The current version implements three model families:
+### Linear Regression
 
-- Ordinary Least Squares (OLS) and Weighted Least Squares (WLS)
-- Binary Logit and Probit
-- Ordered Logit and Probit
+`econ_lm()` supports OLS and WLS with:
 
-The package supports classical, heteroskedasticity-robust, and cluster-robust covariance estimation, prediction, inference, and integration with standard R model-reporting tools.
+- Factors, interactions, transformations, and custom contrasts
+- Offsets and rank-deficient specifications
+- Classical, heteroskedasticity-robust, and cluster-robust covariance estimation
+- Standard inference, prediction, and model diagnostics
 
-## Features
+### Binary Logit and Probit
 
-### Linear Models
+`econ_binary()` estimates binary-response models using:
 
-The `econ_lm()` function supports:
+- `link = "logit"` or `link = "probit"`
+- A numeric response coded `0` and `1`
+- Classical, HC, and cluster-robust covariance estimators
+- Predicted probabilities, linear predictors, and confidence intervals
+- Likelihood-based goodness-of-fit statistics
 
-- Ordinary Least Squares (OLS)
-- Weighted Least Squares (WLS)
-- R formula syntax
-- Factors and custom contrasts
-- Transformations and interactions
-- Offsets
-- Subsetting
-- Rank-deficient models
-- Zero-weight observations
-- Classical, heteroskedasticity-robust, and clustered covariance estimation
+### Ordered Logit and Probit
 
-### Binary Response Models
+`econ_ordered()` estimates models with an **ordered factor response containing at least three levels**.
 
-The `econ_binary()` function supports:
+Features include:
 
-- Binary Logit (`link = "logit"`)
-- Binary Probit (`link = "probit"`)
-- Weighted maximum-likelihood estimation
-- R formula syntax
-- Factors, transformations, and interactions
-- Subsetting and missing-data handling
-- Classical, heteroskedasticity-robust, and clustered covariance estimation
-- In-sample and out-of-sample prediction
-- Predicted probabilities and linear predictors
-- Log-likelihood, AIC, and BIC
-- Coefficient inference and confidence intervals
-- Integration with standard R and `broom` methods
+- `link = "logit"` or `link = "probit"`
+- Regression coefficients and category thresholds
+- Classical, HC0/HC1, and supported cluster-robust covariance estimators
+- Predicted categories and category probabilities
+- Delta-method standard errors for predicted probabilities
+- Response and Pearson residuals based on ordinal scores
+- Likelihood-ratio comparisons of nested models
 
-The dependent variable must be numeric and binary, containing only `0` and `1`.
+Estimation uses `MASS::polr()`, with additional covariance, inference, prediction, and reporting functionality implemented by EconR.
 
-### Ordered Response Models
+### Multinomial Logit and Probit
 
-The `econ_ordered()` function supports:
+`econ_multinomial()` estimates models for an **unordered factor response containing at least three observed categories**.
 
-- Ordered Logit (`link = "logit"`)
-- Ordered Probit (`link = "probit"`)
-- Weighted maximum-likelihood estimation
-- R formula syntax
-- Factors, transformations, and interactions
-- Subsetting and model-specific missing-data handling
-- Classical covariance estimation
-- Heteroskedasticity-robust covariance estimation (`HC0`, `HC1`)
-- Cluster-robust covariance estimation (`CR0`, `CR1`, `CR1p`, `CR1S`, `stata`)
-- Regression coefficient and threshold estimation
-- Asymptotic normal inference for classical and HC covariance estimators
-- Cluster-adjusted t inference with `G - 1` degrees of freedom
-- Wald confidence intervals for coefficients and thresholds
-- In-sample and out-of-sample category predictions
-- Predicted category probabilities
-- Delta-method standard errors for predicted category probabilities
-- Weighted and factor-based prediction standard errors
-- Response and Pearson residuals
-- `na.exclude` restoration of omitted observations
-- Log-likelihood, deviance, AIC, and BIC
-- Likelihood-ratio tests for nested models using `anova()`
-- Integration with `broom::tidy()`, `broom::glance()`, and `broom::augment()`
+The first response level is the reference category.
 
-The dependent variable must be an ordered factor with at least three levels.
+| Specification | Arguments |
+|---|---|
+| Multinomial Logit | `link = "logit"` |
+| Multinomial Probit, fixed error covariance | `link = "probit", error_covariance = "fixed"` |
+| Multinomial Probit, estimated error covariance | `link = "probit", error_covariance = "estimated"` |
 
-Ordered models are estimated using `MASS::polr()`, while `EconR` provides its own covariance estimation, inference, residuals, augmentation, and reporting methods.
+Multinomial Logit uses `nnet::multinom()`. Multinomial Probit uses EconR's multivariate-normal probability and maximum-likelihood implementation.
 
+Supported functionality includes:
 
+- Classical, HC0/HC1, and cluster-robust covariance estimation
+- Coefficient inference and joint Wald tests
+- Predicted categories and choice probabilities
+- Delta-method prediction standard errors
+- Average marginal effects for numeric predictors
+- Average discrete probability changes for factor predictors
+- Log-likelihood, AIC, BIC, and McFadden's pseudo-R-squared
+- `broom` integration for model and observation-level reporting
 
-#### Ordered-Model Prediction Standard Errors
+For Multinomial Probit, estimating the error covariance introduces additional parameters and increases computational cost.
 
-For an ordered-response model, the probability of category $j$ is
-
-```math
-P(Y_i = j \mid X_i) = F(\zeta_j - X_i^\top \beta) - F(\zeta_{j-1} - X_i^\top \beta)
-```
-
-where $F$ is the logistic or standard normal cumulative distribution function, $\beta$ contains the regression coefficients, and $\zeta$ contains the category thresholds.
-
-`EconR` uses the **delta method** to estimate standard errors of predicted category probabilities:
-
-```math
-SE(\hat{p}_{ij}) = \sqrt{\nabla_\theta p_{ij}^\top \widehat{V} \nabla_\theta p_{ij}}
-```
-
-where $\theta = (\beta^\top, \zeta^\top)^\top$ and $\widehat{V}$ is the selected model covariance matrix.
-
-Consequently, prediction standard errors reflect the selected classical, heteroskedasticity-robust, or cluster-robust covariance estimator.
-
-Prediction standard errors have been validated against independent numerical derivatives for both ordered Logit and Probit models, including weighted estimation and factor predictors.
-
-
-### Missing-Data Handling
-
-`EconR` constructs the estimation sample from the variables actually required by the specified model.
-
-Missing values in unrelated columns therefore do not remove observations from the estimation sample.
-
-Supported `NA` behavior includes:
-
-- `na.omit`
-- `na.exclude`
-- `na.fail`
-
-Missing values in model inputs such as weights and cluster identifiers are handled within the model-specific estimation workflow.
-
-For ordered-response models, `na.exclude` also preserves exclusion information and restores omitted observations as missing values in supported in-sample predictions and residuals.
-
-This design principle applies across linear, binary-response, and ordered-response models.
-
-### Covariance Estimation
+## 2. Covariance Estimation
 
 The available covariance estimators depend on the model family.
 
-| Covariance estimator | `econ_lm()` | `econ_binary()` | `econ_ordered()` |
-|---|:---:|:---:|:---:|
-| `"classical"` | Yes | Yes | Yes |
-| `"HC0"` | Yes | Yes | Yes |
-| `"HC1"` | Yes | Yes | Yes |
-| `"HC2"` | Yes | Yes | — |
-| `"HC3"` | Yes | Yes | — |
-| `"HC4"` | Yes | Yes | — |
-| `"HC4m"` | Yes | Yes | — |
-| `"HC5"` | Yes | Yes | — |
-| `"CR0"` | Yes | Yes | Yes |
-| `"CR1"` | Yes | Yes | Yes |
-| `"CR1p"` | Yes | Yes | Yes |
-| `"CR1S"` | Yes | Yes | Yes |
-| `"CR2"` | Yes | Yes | — |
-| `"CR3"` | Yes | Yes | — |
-| `"stata"` | Yes | Yes | Yes |
+| Estimator | Linear | Binary | Ordered | Multinomial |
+|---|:---:|:---:|:---:|:---:|
+| `classical` | Yes | Yes | Yes | Yes |
+| `HC0`, `HC1` | Yes | Yes | Yes | Yes |
+| `HC2`, `HC3` | Yes | Yes | — | — |
+| `HC4`, `HC4m`, `HC5` | Yes | Yes | — | — |
+| `CR0`, `CR1` | Yes | Yes | Yes | Yes |
+| `CR1p`, `CR1S` | Yes | Yes | Yes | Yes |
+| `CR2`, `CR3` | Yes | Yes | — | — |
+| `stata` | Yes | Yes | Yes | Yes |
 
-For linear and binary-response models, `EconR` supports all seven heteroskedasticity-consistent covariance estimators available through `sandwich::vcovHC()` and all six cluster-robust covariance estimators available through `clubSandwich::vcovCR()`.
-
-HC estimators account for heteroskedasticity, while CR estimators additionally allow within-cluster error dependence.
-
-The `"stata"` option provides Stata-style cluster-robust covariance estimation.
-
-Ordered-response models implement their supported robust and clustered covariance estimators using analytical observation-level score contributions.
-
-#### Inference Conventions
-
-For binary Logit and Probit models, the reference distribution depends on the covariance estimator:
-
-- **Classical and HC0–HC5:** Asymptotic normal inference (z-tests).
-- **CR0, CR1, CR1p, CR1S, CR3, and stata:** Student's t inference with `G - 1` degrees of freedom, where `G` is the number of clusters.
-- **CR2:** Student's t inference with coefficient-specific Satterthwaite degrees of freedom, calculated using `clubSandwich`.
-
-For ordered Logit and Probit models:
-
-- **Classical, HC0, and HC1:** Asymptotic normal inference (z-tests).
-- **CR0, CR1, CR1p, CR1S, and stata:** Student's t inference with `G - 1` degrees of freedom.
-
-These conventions are applied to coefficient p-values and confidence intervals in `summary()`, `tidy()`, and `confint()`.
-
-Robust covariance estimation builds on established infrastructure from `sandwich` and `clubSandwich`.
-
-Linear and binary-response models implement estimating-function and bread-matrix interfaces for compatibility with `sandwich`.
-
-Ordered-response models provide observation-level score contributions and covariance estimation for the supported robust and clustered estimators.
-
-For example:
+Select the covariance estimator directly when fitting a model:
 
 ```r
 fit = econ_binary(
@@ -192,135 +107,72 @@ fit = econ_binary(
     vcov = "HC3"
 )
 
+summary(fit)
 vcov(fit)
 ```
 
-### Significance Symbols
+For cluster-robust estimation, specify both `vcov` and `cluster`.
 
-Model summaries provide significance symbols based on coefficient p-values.
+Classical and HC inference uses asymptotic normal distributions for nonlinear models. Supported cluster-robust inference uses cluster-adjusted t distributions, with Satterthwaite degrees of freedom for CR2 in binary models.
 
-By default:
+For detailed covariance definitions, see the relevant function help pages.
 
-| Symbol | Significance level |
-|---|---|
-| `*` | p < 0.10 |
-| `**` | p < 0.05 |
-| `***` | p < 0.01 |
+## 3. Missing-Data Handling
 
-An optional additional significance threshold is available through:
+EconR constructs the estimation sample from the variables required by the specified model.
 
-```r
-summary(fit, extra.significance = TRUE)
-```
+Missing values in unrelated dataset columns do not automatically exclude observations.
 
-When enabled, coefficients with p-values below `0.001` receive the `+` symbol.
+Supported missing-data actions include:
 
-| Symbol | Significance level |
-|---|---|
-| `*` | p < 0.10 |
-| `**` | p < 0.05 |
-| `***` | p < 0.01 |
-| `+` | p < 0.001 |
+- `na.omit`
+- `na.exclude`
+- `na.fail`
 
-Each coefficient receives the symbol corresponding to its most stringent satisfied threshold.
+Model inputs such as observation weights and cluster identifiers are incorporated into the relevant estimation workflow.
 
-These symbols affect the printed model summary. Numerical p-values remain available for reporting through `broom` and other tools.
+Where supported, `na.exclude` preserves the original observation alignment when returning in-sample predictions and residuals.
 
-### Standard R Methods
+## 4. Installation
 
-`EconR` provides standard R model interfaces, including:
-
-- `coef()`
-- `vcov()`
-- `predict()`
-- `summary()`
-- `model.matrix()`
-- `nobs()`
-
-Additional linear-model methods include:
-
-- `confint()`
-- `anova()`
-- `fitted()`
-- `residuals()`
-- `weights()`
-- `formula()`
-- `hatvalues()`
-
-Additional binary-response functionality includes:
-
-- `logLik()`
-- `AIC()`
-- `BIC()`
-- `hatvalues()`
-
-Ordered-response functionality includes:
-
-- `confint()`
-- `anova()`
-- `fitted()`
-- `residuals()`
-- `model.frame()`
-- `logLik()`
-- `AIC()`
-- `BIC()`
-- `df.residual()`
-
-Ordered-response models also retain compatibility with relevant methods inherited from `MASS::polr()`.
-
-Compatibility is provided for established reporting and covariance-estimation infrastructure, including:
-
-- `sandwich`
-- `broom`
-- `modelsummary`
-
-The package supports `broom::tidy()` for coefficient reporting, `broom::glance()` for model-level statistics, and `broom::augment()` for observation-level output.
-
-For ordered models, `augment()` can return category probabilities, predicted categories, ordinal-score residuals for in-sample observations, and delta-method standard errors of category probabilities.
-
-## Installation
-
-The development version can be installed directly from GitHub:
+Install the development version from GitHub:
 
 ```r
 # install.packages("remotes")
 remotes::install_github("DavidBustamanteL/EconR")
 ```
 
-To install the tagged `v0.1.4` release specifically, once published:
+To install the tagged 0.1.5 release, once the tag is published:
 
 ```r
 remotes::install_github(
-    "DavidBustamanteL/EconR@v0.1.4"
+    "DavidBustamanteL/EconR@v0.1.5"
 )
 ```
 
-## Examples
-
-### 1. Ordinary Least Squares (OLS)
+Load the package:
 
 ```r
 library(EconR)
+```
 
-fit = econ_lm(
+## 5. Quick Examples
+
+### 5.1. Linear Regression
+
+```r
+fit_lm = econ_lm(
     mpg ~ wt * factor(am) + hp,
     data = mtcars,
     vcov = "HC3"
 )
 
-summary(fit)
-confint(fit)
-anova(fit)
-
-predict(
-    fit,
-    newdata = mtcars[1:3, ]
-)
+summary(fit_lm)
+confint(fit_lm)
+predict(fit_lm, newdata = mtcars[1:3, ])
 ```
 
-### 2. Clustered Linear Model
-
-Clustered covariance estimation can be requested directly:
+For cluster-robust estimation:
 
 ```r
 fit_cluster = econ_lm(
@@ -333,7 +185,9 @@ fit_cluster = econ_lm(
 summary(fit_cluster)
 ```
 
-### 3. Binary Logit
+The cluster variable in this example is illustrative; empirical clustering should follow the data's dependence or sampling structure.
+
+### 5.2. Binary Logit and Probit
 
 ```r
 fit_logit = econ_binary(
@@ -343,27 +197,6 @@ fit_logit = econ_binary(
     vcov = "HC3"
 )
 
-summary(fit_logit)
-
-# Predicted probabilities
-predict(
-    fit_logit,
-    type = "response"
-)
-
-# Predictions for new observations
-predict(
-    fit_logit,
-    newdata = mtcars[1:3, ],
-    type = "response"
-)
-```
-
-### 4. Binary Probit
-
-The same interface can be used for Probit estimation:
-
-```r
 fit_probit = econ_binary(
     am ~ wt + hp,
     data = mtcars,
@@ -371,49 +204,16 @@ fit_probit = econ_binary(
     vcov = "HC1"
 )
 
+summary(fit_logit)
 summary(fit_probit)
 
-predict(
-    fit_probit,
-    type = "response"
-)
+# Predicted probabilities
+predict(fit_logit, type = "response")
 ```
 
-### 5. Clustered Binary Logit
+### 5.3. Ordered Logit and Probit
 
-```r
-fit_logit_cluster = econ_binary(
-    am ~ wt + hp,
-    data = mtcars,
-    link = "logit",
-    vcov = "CR2",
-    cluster = cyl
-)
-
-summary(fit_logit_cluster)
-```
-
-### 6. Weighted Binary Logit
-
-Observation weights can be supplied directly:
-
-```r
-mtcars$w = mtcars$disp / mean(mtcars$disp)
-
-fit_weighted = econ_binary(
-    am ~ wt + hp,
-    data = mtcars,
-    weights = w,
-    link = "logit",
-    vcov = "HC1"
-)
-
-summary(fit_weighted)
-```
-
-### 7. Ordered Logit
-
-The `MASS::housing` dataset provides an example of an ordered dependent variable.
+The `MASS::housing` dataset contains an ordered response (`Sat`) and observation frequencies (`Freq`).
 
 ```r
 library(MASS)
@@ -426,310 +226,240 @@ fit_ordered_logit = econ_ordered(
     vcov = "HC1"
 )
 
-summary(fit_ordered_logit)
-
-# Predicted category probabilities
-predict(
-    fit_ordered_logit,
-    type = "probs"
-)
-
-# Predicted categories
-predict(
-    fit_ordered_logit,
-    type = "class"
-)
-```
-
-The model estimates regression coefficients and thresholds separating the ordered response categories.
-
-### 8. Ordered Probit
-
-```r
 fit_ordered_probit = econ_ordered(
     Sat ~ Infl + Type + Cont,
     data = housing,
     weights = Freq,
-    link = "probit",
-    vcov = "HC1"
+    link = "probit"
 )
 
-summary(fit_ordered_probit)
-```
-
-### 9. Clustered Ordered Logit
-
-Cluster-robust covariance estimation is also supported for ordered models.
-
-```r
-housing$cluster_id = rep(
-    seq_len(12),
-    length.out = nrow(housing)
-)
-
-fit_ordered_cluster = econ_ordered(
-    Sat ~ Infl + Type + Cont,
-    data = housing,
-    weights = Freq,
-    link = "logit",
-    vcov = "CR1S",
-    cluster = cluster_id
-)
-
-summary(fit_ordered_cluster)
-
-confint(fit_ordered_cluster)
-```
-
-The cluster identifiers above are illustrative and should not be interpreted as meaningful clusters in the original dataset. In empirical applications, clustering should reflect the sampling design or dependence structure.
-
-### 10. Ordered Predictions with Standard Errors
-
-`broom::augment()` provides observation-level predictions and delta-method standard errors for category probabilities.
-
-```r
-library(broom)
-
-new_housing = housing[1:5, c("Infl", "Type", "Cont")]
-
-ordered_predictions = augment(
-    fit_ordered_logit,
-    newdata = new_housing,
-    se_fit = TRUE
-)
-
-ordered_predictions
-```
-
-The resulting tibble includes:
-
-- `.fitted`: Most likely response category
-- `.fitted_<category>`: Predicted probability of each response category
-- `.se.fit_<category>`: Delta-method standard error for each category probability
-
-Category names are converted into valid R column-name components using `make.names()`.
-
-The standard errors use the covariance estimator specified when fitting the model.
-
-### 11. Ordered Residuals
-
-Ordered models provide response and Pearson residuals based on ordinal category scores.
-
-```r
-# Ordinal-score response residuals
-residuals(
-    fit_ordered_logit,
-    type = "response"
-)
-
-# Standardized ordinal-score residuals
-residuals(
-    fit_ordered_logit,
-    type = "pearson"
-)
-```
-
-Response residuals are defined as the observed category score minus its predicted expected category score.
-
-Pearson residuals additionally divide by the square root of the predicted variance of the category score.
-
-These are ordinal-score residuals rather than latent-variable residuals.
-
-### 12. Likelihood-Ratio Tests for Ordered Models
-
-Nested ordered-response models can be compared using likelihood-ratio tests.
-
-```r
-ordered_small = econ_ordered(
-    Sat ~ Infl,
-    data = housing,
-    weights = Freq,
-    link = "logit"
-)
-
-ordered_large = econ_ordered(
-    Sat ~ Infl + Type + Cont,
-    data = housing,
-    weights = Freq,
-    link = "logit"
-)
-
-anova(
-    ordered_small,
-    ordered_large,
-    test = "Chisq"
-)
-```
-
-Models must use the same link function, estimation sample, dependent variable, and observation weights. Their specifications must be nested and supplied in increasing order of complexity.
-
-### 13. Additional Significance Threshold
-
-```r
-# Default significance symbols
 summary(fit_ordered_logit)
+summary(fit_ordered_probit)
 
-# Include the additional p < 0.001 threshold
-summary(
-    fit_ordered_logit,
-    extra.significance = TRUE
-)
+# Category probabilities
+predict(fit_ordered_logit, type = "probs")
+
+# Most likely category
+predict(fit_ordered_logit, type = "class")
 ```
 
-### 14. Compatibility with broom and modelsummary
+For prediction standard errors:
 
 ```r
-library(broom)
-library(modelsummary)
-
-# Coefficient table
-tidy(fit_logit)
-
-# Model-level statistics
-glance(fit_logit)
-
-# Ordered-model coefficients and thresholds
-tidy(fit_ordered_logit)
-
-# Ordered-model confidence intervals
-tidy(
+broom::augment(
     fit_ordered_logit,
-    conf.int = TRUE
-)
-
-# Ordered-model fit statistics
-glance(fit_ordered_logit)
-
-# Ordered-model observation-level predictions
-augment(
-    fit_ordered_logit,
+    newdata = housing[1:5, c("Infl", "Type", "Cont")],
     se_fit = TRUE
 )
-
-# Regression table
-modelsummary(
-    list(
-        "Logit" = fit_logit,
-        "Probit" = fit_probit
-    ),
-    stars = TRUE,
-    output = "default"
-)
 ```
 
-The significance symbols used by `modelsummary` are controlled by its own `stars` argument and are independent of the optional `extra.significance` argument in `EconR` summaries.
+This returns category predictions, probabilities, and delta-method standard errors.
 
-### 15. Direct Sandwich Compatibility
+### 5.4. Multinomial Logit and Probit
 
-For model families supporting the corresponding sandwich interfaces, covariance matrices can be computed directly:
+The following example creates a three-category response with `A` as the reference category.
 
 ```r
-sandwich::vcovHC(
-    fit_logit,
-    type = "HC3"
+set.seed(123)
+
+n = 200
+
+dat = data.frame(
+    x = rnorm(n)
+)
+
+eta_B = 0.5 + 0.8 * dat$x
+eta_C = -0.3 - 0.5 * dat$x
+
+P = cbind(
+    A = 1,
+    B = exp(eta_B),
+    C = exp(eta_C)
+)
+
+P = P / rowSums(P)
+
+dat$y = factor(
+    vapply(
+        seq_len(n),
+        function(i) {
+            sample(
+                c("A", "B", "C"),
+                size = 1,
+                prob = P[i, ]
+            )
+        },
+        character(1)
+    ),
+    levels = c("A", "B", "C")
 )
 ```
 
-## Validation
+**Multinomial Logit:**
 
-Version `0.1.4` has been tested against established R implementations and infrastructure, including:
+```r
+fit_multi_logit = econ_multinomial(
+    y ~ x,
+    data = dat,
+    link = "logit"
+)
 
-- `lm()`
-- `glm()`
-- `MASS::polr()`
-- `estimatr`
-- `sandwich`
-- `clubSandwich`
-- `broom`
+summary(fit_multi_logit)
 
-Validation covers:
-
-- Coefficient estimation
-- Classical and robust covariance matrices
-- Cluster-robust covariance estimation
-- Weighted estimation
-- Predictions
-- Delta-method prediction standard errors
-- Factor-based prediction
-- Missing-data handling and `na.exclude` restoration
-- Statistical inference
-- Model-reporting compatibility
-
-The automated test suite currently reports:
-
-| Model family | Passing assertions |
-|---|---:|
-| Linear models (OLS/WLS) | 490 |
-| Binary models (Logit/Probit) | 424 |
-| Ordered models (Logit/Probit) | 467 |
-| **Total** | **1,381** |
-
-The complete test suite passes:
-
-```text
-FAIL 0 | WARN 0 | SKIP 0 | PASS 1381
+predict(
+    fit_multi_logit,
+    newdata = dat[1:5, ],
+    type = "probs"
+)
 ```
 
-The package also successfully passes `R CMD check`:
+**Multinomial Probit with fixed error covariance:**
+
+```r
+fit_multi_probit = econ_multinomial(
+    y ~ x,
+    data = dat,
+    link = "probit",
+    error_covariance = "fixed"
+)
+
+summary(fit_multi_probit)
+
+predict(
+    fit_multi_probit,
+    newdata = dat[1:5, ],
+    type = "probs"
+)
+```
+
+To estimate the Probit error covariance instead, set:
+
+```r
+error_covariance = "estimated"
+```
+
+inside the `econ_multinomial()` call.
+
+### 5.5. Multinomial Marginal Effects
+
+Marginal effects express changes in predicted choice probabilities rather than changes in log-odds or latent utilities.
+
+```r
+marginal_effects(
+    fit_multi_logit
+)
+```
+
+For numeric predictors, EconR computes average marginal effects. For factor predictors, it computes average discrete changes in category probabilities.
+
+Standard errors use the delta method and the covariance estimator selected during estimation.
+
+### 5.6. Model Reporting
+
+EconR supports standard model methods, including:
+
+- `summary()`, `coef()`, and `vcov()`
+- `predict()`, `confint()`, and `logLik()` where implemented
+- `AIC()` and `BIC()` for likelihood-based models
+- `broom::tidy()`, `broom::glance()`, and `broom::augment()`
+
+For example:
+
+```r
+broom::tidy(fit_multi_logit)
+broom::glance(fit_multi_logit)
+
+broom::augment(
+    fit_multi_logit,
+    newdata = dat[1:5, ],
+    se_fit = TRUE
+)
+```
+
+Regression tables can also be generated using `modelsummary`:
+
+```r
+modelsummary::modelsummary(
+    list(
+        "Binary Logit" = fit_logit,
+        "Binary Probit" = fit_probit
+    )
+)
+```
+
+## 6. Validation
+
+EconR has been validated against established R implementations and econometric infrastructure, including:
+
+- `lm()` and `estimatr` for linear regression
+- `glm()` for binary-response models
+- `MASS::polr()` for ordered-response models
+- `nnet` and `mlogit` for multinomial models
+- `sandwich` and `clubSandwich` for covariance estimation
+- `broom` for reporting compatibility
+
+Validation covers parameter estimation, covariance matrices, inference, observation weights, missing-data handling, predictions, and relevant reporting methods.
+
+The latest reported model-specific test results are:
+
+| Model family | Passing test expectations |
+|---|---:|
+| Linear (OLS/WLS) | 490 |
+| Binary Logit/Probit | 424 |
+| Ordered Logit/Probit | 467 |
+| Multinomial Logit/Probit | 485 |
+| **Total** | **1,866** |
+
+The multinomial tests include fixed- and estimated-covariance Probit specifications.
+
+An additional console comparison of Multinomial Logit against `mlogit` confirmed close agreement in coefficients, standard errors, log-likelihood, AIC, and predicted probabilities.
+
+The complete package also passed `R CMD check` on Windows with R 4.6.1:
 
 ```text
 0 errors | 0 warnings | 0 notes
 ```
 
-These results describe the validation performed for version `0.1.4` and do not imply that all possible model specifications or data configurations have been tested.
+These results document the tested specifications and do not imply that every possible model configuration has been validated.
 
-## Design Principle
+## 7. Design Principle
 
-The central design principle of `EconR` is that the estimation sample should be determined by the model being estimated.
+EconR's central principle is that **the model determines the estimation sample**.
 
-An observation is excluded because information required by that model is missing—not because an unrelated variable elsewhere in the data contains a missing value.
+An observation should be excluded because information required by the model is missing, not because an unrelated variable in the dataset contains an `NA`.
 
-`EconR` therefore owns model construction, estimation-sample handling, and estimation semantics, while established packages provide specialized functionality where appropriate.
+The package combines this principle with:
 
-The implementation combines:
-
-- Consistent model interfaces
-- Model-specific missing-data handling
+- Consistent function interfaces
 - Explicit covariance-estimator selection
-- Standardized inference and reporting
-- Compatibility with existing R econometric infrastructure
+- Model-appropriate inference
+- Standard R prediction and reporting methods
 
-This philosophy is applied across linear, binary-response, and ordered-response models.
+EconR is under active development.
 
-## Development Status
+Version 0.1.5 introduces Multinomial Logit and Probit, including fixed and estimated Probit error covariance specifications, robust and clustered inference, category predictions, and marginal effects.
 
-`EconR` is under active development.
+## 8. Documentation
 
-Version `0.1.4` extends the validated OLS/WLS and binary Logit/Probit framework with:
+For function-specific arguments and supported methods:
 
-- Ordered Logit and Probit estimation
-- Robust and clustered covariance estimation for ordered-response models
-- Ordered-model coefficient and threshold inference
-- Delta-method prediction standard errors
-- Weighted and factor-based ordered predictions
-- Ordered-model residuals and `na.exclude` restoration
-- Likelihood-ratio comparisons of nested ordered models
-- Standardized significance symbols across model families
-- An optional additional significance threshold
-- Expanded `broom` integration for ordered models
-- An automated test suite with 1,345 passing assertions
-- A clean `R CMD check` with no errors, warnings, or notes
+```r
+help(EconR)
 
-Future development will extend the interface to additional econometric model classes.
+?econ_lm
+?econ_binary
+?econ_ordered
+?econ_multinomial
+```
 
-## Author
+## 9. Author and Citation
 
-David Bustamante Lazo
+**Author:** David Bustamante Lazo
 
-## Repository
+**Repository:** https://github.com/DavidBustamanteL/EconR
 
-https://github.com/DavidBustamanteL/EconR
-
-## Citation
+**DOI:** https://doi.org/10.5281/zenodo.23547786
 
 If you use EconR in academic research, please cite:
 
-Bustamante Lazo, D. (2026). *EconR: Econometric Models with Consistent Estimation Semantics* (Version 0.1.4) [Computer software]. Zenodo.
-
-https://doi.org/10.5281/zenodo.23547787
-
+Bustamante Lazo, D. (2026). *EconR: Econometric Models with Consistent Estimation Semantics* (Version 0.1.5) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23547786

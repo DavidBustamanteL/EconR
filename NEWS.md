@@ -1,4 +1,22 @@
-# EconR 0.1.3
+
+# EconR 0.1.5
+
+- Added `econ_multinomial()` for Multinomial Logit and Multinomial Probit regression.
+- Implemented Multinomial Logit estimation using `nnet::multinom()` as the estimation backend.
+- Implemented Multinomial Probit estimation with fixed or estimated error covariance matrices, using multivariate normal probabilities from `mvtnorm`.
+- Added classical, HC0, HC1, CR0, CR1, CR1p, CR1S, and Stata-style covariance estimators.
+- Added analytical observation-level score contributions through `estfun.econ_multinomial()`.
+- Added support for observation weights, subsetting, missing-value handling, missing-weight warnings, and cluster alignment.
+- Added parameter inference, confidence intervals, joint Wald tests, and model summary statistics.
+- Implemented in-sample and out-of-sample probability predictions, predicted classes, and prediction standard errors.
+- Added average marginal effects for continuous and categorical predictors, including weighted estimation and uncertainty quantification.
+- Integrated multinomial models with standard R methods, including `coef()`, `vcov()`, `summary()`, `predict()`, `fitted()`, `logLik()`, `nobs()`, and `confint()`.
+- Added compatibility with `broom::tidy()`, `broom::glance()`, and `broom::augment()`.
+- Validated Multinomial Logit estimates against `nnet` and Multinomial Probit estimates against `mlogit`.
+- Added independent numerical checks for covariance estimation, score contributions, prediction probabilities, and marginal effects.
+- Completed 485 passing assertions in the multinomial test suite, with zero failures, warnings, or skipped expectations.
+
+# EconR 0.1.4
 
 - Added `econ_ordered()` for Ordered Logit and Ordered Probit regression, using `MASS::polr()` as the estimation backend.
 - Implemented classical, HC0, HC1, CR0, and CR1 covariance estimators for ordered models.

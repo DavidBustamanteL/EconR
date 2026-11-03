@@ -2,7 +2,7 @@
 % Please edit documentation in R/econ_multinomial.R
 \name{econ_multinomial}
 \alias{econ_multinomial}
-\title{Multinomial Logit Regression}
+\title{Multinomial Logit and Probit Regression}
 \usage{
 econ_multinomial(
   formula,
@@ -13,6 +13,7 @@ econ_multinomial(
   link = c("logit", "probit"),
   vcov = c("classical", "HC0", "HC1", "CR0", "CR1", "CR1p", "CR1S", "stata"),
   cluster = NULL,
+  error_covariance = c("fixed", "estimated"),
   ...
 )
 }
@@ -21,24 +22,34 @@ econ_multinomial(
 
 \item{data}{Data frame containing model variables.}
 
-\item{weights}{Optional nonnegative observation weights.}
+\item{weights}{Optional nonnegative observation weights. Missing values are
+removed according to `na.action`; NaN, infinite, and negative weights are
+rejected.}
 
 \item{subset}{Optional logical or integer row subset.}
 
-\item{na.action}{Missing-value handling function.}
+\item{na.action}{Missing-value handling function; defaults to stats::na.omit.}
+
+\item{link}{Either "logit" (default) or "probit".}
 
 \item{vcov}{One of "classical", "HC0", "HC1", "CR0", "CR1",
 "CR1p", "CR1S", or "stata".}
 
 \item{cluster}{Optional clustering variable, required for CR estimators.}
 
-\item{...}{Additional arguments passed to nnet::multinom().}
+\item{error_covariance}{For probit, either "fixed" (default) or "estimated".
+Estimated covariance is not available for the logit link.}
+
+\item{...}{Additional arguments passed to nnet::multinom() for logit;
+unsupported for probit.}
 }
 \value{
-An object inheriting from "econ_multinomial" and "multinom".
+An object of class "econ_multinomial". Logit fits also inherit
+  from "multinom"; probit fits use EconR's own model representation.
 }
 \description{
-Estimates a baseline-category multinomial logit model using nnet::multinom.
-The first response level is the reference category. Covariance estimates
-use observation-level score contributions and the inverse Hessian.
+Estimates baseline-category multinomial logit models using nnet::multinom()
+or multinomial probit models using multivariate normal choice probabilities.
+The first response level is the reference category. The probit error
+covariance matrix can be fixed or estimated.
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/econ_multinomial.R
 \name{augment.econ_multinomial}
 \alias{augment.econ_multinomial}
-\title{Augment Multinomial Logit Models}
+\title{Augment Multinomial Logit and Probit Models}
 \usage{
 \method{augment}{econ_multinomial}(x, data = NULL, newdata = NULL, se_fit = FALSE, ...)
 }

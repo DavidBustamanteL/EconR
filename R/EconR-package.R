@@ -1,3 +1,4 @@
+
 ###### 1. EconR Package Documentation ####
 
 #' EconR: Econometric Models with Consistent Estimation Semantics
@@ -13,12 +14,18 @@
 #' \itemize{
 #'   \item \code{econ_lm()}: Ordinary least squares (OLS) and
 #'         weighted least squares (WLS).
-#'   \item \code{econ_binary()}: Binary logit and probit models.
-#'   \item \code{econ_ordered()}: Ordered logit and probit models.
+#'   \item \code{econ_binary()}: Binary Logit and Probit models.
+#'   \item \code{econ_ordered()}: Ordered Logit and Probit models.
+#'   \item \code{econ_multinomial()}: Multinomial Logit and Probit models,
+#'         including fixed and estimated error covariance specifications
+#'         for Multinomial Probit.
 #' }
 #'
 #' EconR supports classical, heteroskedasticity-robust, and
 #' cluster-robust covariance estimators, depending on the model.
+#'
+#' It provides observation weights, subsetting, and model-specific
+#' missing-data handling, including missing-weight handling.
 #'
 #' The package integrates with standard R methods, including
 #' \code{summary()}, \code{coef()}, \code{vcov()},
@@ -32,11 +39,12 @@
 #'   \item{Linear models}{\code{\link{econ_lm}}}
 #'   \item{Binary response models}{\code{\link{econ_binary}}}
 #'   \item{Ordered response models}{\code{\link{econ_ordered}}}
+#'   \item{Multinomial response models}{\code{\link{econ_multinomial}}}
 #' }
 #'
 #' @section Goodness of Fit:
-#' Binary and ordered response models provide McFadden's
-#' pseudo-R-squared alongside standard likelihood-based
+#' Binary, ordered, and multinomial response models provide
+#' McFadden's pseudo-R-squared alongside standard likelihood-based
 #' goodness-of-fit statistics.
 #'
 #' @author
@@ -45,9 +53,8 @@
 #' @seealso
 #' \code{\link{econ_lm}},
 #' \code{\link{econ_binary}},
-#' \code{\link{econ_ordered}}
+#' \code{\link{econ_ordered}},
+#' \code{\link{econ_multinomial}}
 #'
-#' @docType package
-#' @name EconR-package
-#' @aliases EconR
-NULL
+#' @keywords internal
+"_PACKAGE"

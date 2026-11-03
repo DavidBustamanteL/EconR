@@ -414,11 +414,13 @@ testthat::test_that("factor predictors match nnet", {
 })
 
 
-###### 11. Invalid Weight Handling ####
+###### 11. Invalid and Missing Weight Handling ####
 
-testthat::test_that("invalid weights are rejected", {
+testthat::test_that("invalid weights are rejected and missing weights are dropped", {
 
     dat = make_multinomial_sample()
+
+    ###### 1. Reject negative weights ####
 
     dat$w[1] = -1
 
@@ -431,16 +433,7 @@ testthat::test_that("invalid weights are rejected", {
         "weights"
     )
 
-    dat$w[1] = NA_real_
-
-    testthat::expect_error(
-        econ_multinomial(
-            y ~ x1 + x2,
-            data = dat,
-            weights = w
-        ),
-        "weights"
-    )
+    ###### 2. Reject infinite weights ####
 
     dat$w[1] = Inf
 
@@ -452,6 +445,70 @@ testthat::test_that("invalid weights are rejected", {
         ),
         "weights"
     )
+
+    ###### 3. Exclude missing weights ####
+
+    dat$w[1] = NA_real_
+
+    dat$w[20] = NA_real_
+
+    complete = !is.na(dat$w)
+
+    testthat::expect_warning(
+    {
+        fit = econ_multinomial(
+            y ~ x1 + x2,
+            data = dat,
+            weights = w
+        )
+    },
+    "missingness in the weights"
+    )
+
+    ###### 4. Validate estimation sample ####
+
+    testthat::expect_equal(
+        nobs(fit),
+        sum(complete)
+    )
+
+    testthat::expect_equal(
+        fit$used,
+        which(complete)
+    )
+
+    testthat::expect_equal(
+        fit$omitted,
+        which(!complete)
+    )
+
+    testthat::expect_equal(
+        unname(fit$econ_weights),
+        unname(dat$w[complete])
+    )
+
+    ###### 5. Compare with nnet ####
+
+    ref = nnet::multinom(
+        y ~ x1 + x2,
+        data = dat,
+        weights = w,
+        Hess = TRUE,
+        trace = FALSE
+    )
+
+    testthat::expect_equal(
+        unname(coef(fit)),
+        unname(coef(ref)),
+        tolerance = 1e-5
+    )
+
+    testthat::expect_equal(
+        unname(vcov(fit)),
+        unname(vcov(ref)),
+        tolerance = 1e-5
+    )
+
 })
 
 
@@ -1268,7 +1325,7 @@ testthat::test_that("classical multinomial joint Wald test is correct", {
     names(beta) = colnames(V)
 
     selected = names(beta)[
-        !grepl(":(Intercept)$", names(beta))
+    !endsWith(names(beta), ":(Intercept)")
     ]
 
     b = beta[selected]
@@ -1308,7 +1365,7 @@ testthat::test_that("clustered multinomial Wald test uses F distribution", {
     names(beta) = colnames(V)
 
     selected = names(beta)[
-        !grepl(":(Intercept)$", names(beta))
+    !endsWith(names(beta), ":(Intercept)")
     ]
 
     b = beta[selected]
@@ -4810,43 +4867,88 @@ testthat::test_that(
 ###### 49.5. Missing Weight Validation ####
 
 testthat::test_that(
-    "Estimated probit rejects missing observation weights",
+    "Estimated probit drops missing observation weights",
     {
+
+        ###### 1. Generate data ####
 
         dat = .stage18_fixture()$dat
 
         dat$w = rep(1, nrow(dat))
-
         dat$w[5] = NA_real_
 
-        testthat::expect_error(
-            econ_multinomial(
-                y ~ x,
-                data = dat,
-                weights = w,
-                link = "probit",
-                error_covariance = "estimated"
-            ),
-            "weights"
+        ###### 2. Missing weights without subset ####
+
+        testthat::expect_warning(
+            {
+                fit = econ_multinomial(
+                    y ~ x,
+                    data = dat,
+                    weights = w,
+                    link = "probit",
+                    error_covariance = "estimated"
+                )
+            },
+            "missingness in the weights"
         )
+
+        expected = which(!is.na(dat$w))
+
+        testthat::expect_equal(
+            fit$used,
+            expected
+        )
+
+        testthat::expect_equal(
+            fit$omitted,
+            5L
+        )
+
+        testthat::expect_equal(
+            nobs(fit),
+            length(expected)
+        )
+
+        testthat::expect_equal(
+            unname(fit$econ_weights),
+            unname(dat$w[expected])
+        )
+
+        ###### 3. Missing weights with subset ####
 
         dat$keep = rep(TRUE, nrow(dat))
         dat$keep[5] = FALSE
 
-        testthat::expect_error(
-            econ_multinomial(
-                y ~ x,
-                data = dat,
-                weights = w,
-                subset = keep,
-                link = "probit",
-                error_covariance = "estimated"
-            ),
-            "weights"
+        testthat::expect_warning(
+    {
+        fit_subset = econ_multinomial(
+            y ~ x,
+            data = dat,
+            weights = w,
+            subset = keep,
+            link = "probit",
+            error_covariance = "estimated"
         )
-    }
+    },
+    "missingness in the weights"
 )
 
+        testthat::expect_equal(
+            fit_subset$used,
+            which(dat$keep)
+        )
+
+        testthat::expect_equal(
+            nobs(fit_subset),
+            sum(dat$keep)
+        )
+
+        testthat::expect_false(
+            anyNA(fit_subset$econ_weights)
+        )
+
+    }
+)
 
 ###### 49.6. Invalid Weight Validation ####
 

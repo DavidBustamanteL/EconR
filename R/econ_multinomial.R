@@ -1,22 +1,37 @@
-###### 1. Multinomial Logit Estimation ####
+# Nonstandard-evaluation column names supplied to model.frame() and
+# nnet::multinom(). These are constructed inside econ_multinomial().
+utils::globalVariables(c(
+    ".econ_multi_weights",
+    ".econ_multi_subset",
+    ".econ_multi_fit_weights"
+))
 
-#' Multinomial Logit Regression
+###### 1. Multinomial Logit and Probit Estimation ####
+
+#' Multinomial Logit and Probit Regression
 #'
-#' Estimates a baseline-category multinomial logit model using nnet::multinom.
-#' The first response level is the reference category. Covariance estimates
-#' use observation-level score contributions and the inverse Hessian.
+#' Estimates baseline-category multinomial logit models using nnet::multinom()
+#' or multinomial probit models using multivariate normal choice probabilities.
+#' The first response level is the reference category. The probit error
+#' covariance matrix can be fixed or estimated.
 #'
 #' @param formula Model formula.
 #' @param data Data frame containing model variables.
-#' @param weights Optional nonnegative observation weights.
+#' @param weights Optional nonnegative observation weights. Missing values are
+#'   removed according to `na.action`; NaN, infinite, and negative weights are
+#'   rejected.
 #' @param subset Optional logical or integer row subset.
-#' @param na.action Missing-value handling function.
+#' @param na.action Missing-value handling function; defaults to stats::na.omit.
+#' @param link Either "logit" (default) or "probit".
 #' @param vcov One of "classical", "HC0", "HC1", "CR0", "CR1",
 #'   "CR1p", "CR1S", or "stata".
 #' @param cluster Optional clustering variable, required for CR estimators.
 #' @param error_covariance For probit, either "fixed" (default) or "estimated".
-#' @param ... Additional arguments passed to nnet::multinom().
-#' @return An object inheriting from "econ_multinomial" and "multinom".
+#'   Estimated covariance is not available for the logit link.
+#' @param ... Additional arguments passed to nnet::multinom() for logit;
+#'   unsupported for probit.
+#' @return An object of class "econ_multinomial". Logit fits also inherit
+#'   from "multinom"; probit fits use EconR's own model representation.
 #' @export
 econ_multinomial = function(
     formula, data, weights = NULL, subset = NULL,
@@ -58,10 +73,20 @@ econ_multinomial = function(
     }
     cl = evaluate_arg(substitute(cluster), "cluster", NULL)
     clustered = vcov %in% c("CR0", "CR1", "CR1p", "CR1S", "stata")
-    if (clustered && is.null(cl)) stop("Clustered covariance requires 'cluster'.", call. = FALSE)
-    if (anyNA(w) || any(!is.finite(w)) || any(w < 0)) {
-        stop("weights must be finite, nonnegative, and nonmissing.", call. = FALSE)
+
+    ###### Validate observation weights ####
+
+    if (!is.numeric(w) ||
+        any(is.nan(w)) ||
+        any(!is.finite(w[!is.na(w)])) ||
+        any(w[!is.na(w)] < 0)) {
+
+        stop(
+            "weights must be finite and nonnegative; NaN is not allowed.",
+            call. = FALSE
+        )
     }
+    
     model_data = data
     model_data$.econ_multi_row_id = seq_len(n_original)
     model_data$.econ_multi_weights = w
@@ -72,6 +97,18 @@ econ_multinomial = function(
         subset = .econ_multi_subset,
         na.action = na.action, drop.unused.levels = TRUE
     )
+
+    ###### Report missing observation weights ####
+
+    if (anyNA(w) && identical(na.action, stats::na.omit)) {
+
+        warning(
+            "Some observations have missingness in the weights ",
+            "variable(s). These observations were dropped.",
+            call. = FALSE
+        )
+    }
+
     y = stats::model.response(mf)
     if (!is.factor(y) || is.ordered(y) || nlevels(y) < 3L) {
         stop("Response must be an unordered factor with at least three observed levels.", call. = FALSE)
@@ -384,7 +421,7 @@ summary.econ_multinomial = function(
     beta = as.vector(t(C))
     names(beta) = colnames(V)
 
-    tested = !grepl(":(Intercept)$", names(beta))
+    tested = !endsWith(names(beta), ":(Intercept)")
 
     b = beta[tested]
 
@@ -858,13 +895,10 @@ logLik.econ_multinomial = function(object, ...) {
 #' @export
 nobs.econ_multinomial = function(object, ...) length(object$used)
 
-#' @export
-
-
 
 ###### 6. Average Marginal Effects ####
 
-#' Average Marginal Effects for Multinomial Logit
+#' Average Marginal Effects for Multinomial Logit and Probit
 #'
 #' Computes average marginal effects for continuous predictors and
 #' average discrete probability changes for factor predictors.
@@ -1337,7 +1371,7 @@ probabilities = function(
 
 ###### 7. Multinomial Augment Method ####
 
-#' Augment Multinomial Logit Models
+#' Augment Multinomial Logit and Probit Models
 #'
 #' Returns predicted outcome categories and category probabilities.
 #' Optionally computes delta-method standard errors using the
@@ -1690,7 +1724,7 @@ glance.econ_multinomial = function(x, ...) {
 
 ###### 9. Multinomial Tidy Method ####
 
-#' Tidy a Multinomial Logit Model
+#' Tidy a Multinomial Logit or Probit Model
 #'
 #' Returns coefficient estimates and inference statistics using
 #' the covariance estimator selected when fitting the model.
@@ -2995,7 +3029,7 @@ tidy.econ_multinomial = function(
     } else {
         numeric(0)
     }
-    theta = c(setNames(beta, parameter_names), gamma)
+    theta = c(stats::setNames(beta, parameter_names), gamma)
 
     if (!setequal(names(theta), colnames(V))) {
         stop(

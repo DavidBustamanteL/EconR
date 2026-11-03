@@ -80,7 +80,7 @@ S3method(augment,econ_ordered)
 S3method(residuals,econ_ordered)
 
 # Multinomial
-
+export(econ_multinomial)
 
 
 S3method(summary,econ_multinomial)

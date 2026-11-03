@@ -2,7 +2,7 @@
 % Please edit documentation in R/econ_multinomial.R
 \name{tidy.econ_multinomial}
 \alias{tidy.econ_multinomial}
-\title{Tidy a Multinomial Logit Model}
+\title{Tidy a Multinomial Logit or Probit Model}
 \usage{
 \method{tidy}{econ_multinomial}(x, conf.int = FALSE, conf.level = 0.95, ...)
 }
