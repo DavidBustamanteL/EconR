@@ -6775,7 +6775,7 @@ cat(
 
 #### Dev Tool Testing ####
 devtools::load_all()
-devtools::test()
+devtools::test(filter = "ols")
 
 devtools::document()
 

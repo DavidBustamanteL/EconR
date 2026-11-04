@@ -2214,8 +2214,11 @@ tidy.econ_lm = function(
 
     out$df = inference$df
 
-    out$outcome = as.character(
-        stats::formula(x)[[2]]
+    out$outcome = paste(
+        deparse(
+            stats::formula(x)[[2L]]
+        ),
+        collapse = ""
     )
 
 
