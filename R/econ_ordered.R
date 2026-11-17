@@ -26,7 +26,8 @@ econ_ordered = function(
         "CR0", "CR1", "CR1p", "CR1S", "stata"),
     cluster = NULL
 ) {
-
+    
+    user_call = match.call()
     link = match.arg(link)
     vcov = match.arg(vcov)
 
@@ -162,6 +163,8 @@ if (vcov %in% clustered_types && is.null(evaluated_cluster)) {
     )
 
     # Store EconR information
+    fit$econ_call = user_call
+
     fit$na.action = attr(mf, "na.action")
     fit$link = link
     fit$vcov_type = vcov
@@ -600,7 +603,7 @@ summary.econ_ordered = function(
     ###### 5a. Construct summary object ####
 
     ans = list(
-        call = object$call,
+        call = object$econ_call,
         coefficients = coef_table,
         link = object$link,
         vcov_type = object$vcov_type,
