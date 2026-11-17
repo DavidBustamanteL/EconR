@@ -8,5 +8,6 @@
 ^testing_ordered\.R$
 ^testing_multinomial\.R$
 ^multinomial-profile.out$
+^testing_panel\.R$
 
 ^CITATION\.cff$
