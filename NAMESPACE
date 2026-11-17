@@ -82,7 +82,6 @@ S3method(residuals,econ_ordered)
 # Multinomial
 export(econ_multinomial)
 
-
 S3method(summary,econ_multinomial)
 S3method(print,summary.econ_multinomial)
 S3method(coef,econ_multinomial)
@@ -95,3 +94,6 @@ S3method(glance,econ_multinomial)
 S3method(tidy,econ_multinomial)
 S3method(fitted,econ_multinomial)
 S3method(confint,econ_multinomial)
+
+
+# Panel

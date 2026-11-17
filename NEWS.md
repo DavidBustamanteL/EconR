@@ -1,4 +1,9 @@
 
+# EconR 0.1.6
+
+- 
+
+
 # EconR 0.1.5
 
 - Added `econ_multinomial()` for Multinomial Logit and Multinomial Probit regression.
